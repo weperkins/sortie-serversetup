@@ -382,17 +382,25 @@ function Header({scenarioId,atRisk,util,deployed,demoOpen,setDemoOpen}) {
 
 function DemoPanel({scenarioId,setScenarioId,onClose}) {
   return (
-    <div style={{position:"absolute",top:57,right:0,width:320,background:C.card,
-      borderLeft:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,zIndex:200}}>
-      <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,
+    <div style={{position:"absolute",top:57,right:0,width:320,maxHeight:"calc(100vh - 57px)",
+      background:C.card,borderLeft:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,
+      zIndex:200,display:"flex",flexDirection:"column"}}>
+      <style>{`
+        .sortie-demopanel-scroll::-webkit-scrollbar { width: 10px; }
+        .sortie-demopanel-scroll::-webkit-scrollbar-track { background: ${C.surface}; }
+        .sortie-demopanel-scroll::-webkit-scrollbar-thumb { background: ${C.accent}66; border-radius: 5px; border: 2px solid ${C.surface}; }
+        .sortie-demopanel-scroll::-webkit-scrollbar-thumb:hover { background: ${C.accent}cc; }
+        .sortie-demopanel-scroll { scrollbar-width: thin; scrollbar-color: ${C.accent}66 ${C.surface}; }
+      `}</style>
+      <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,flexShrink:0,
         display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <span style={{fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:2,color:C.dim}}>SIMULATION CONTROLS</span>
         <button onClick={onClose} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:16}}>✕</button>
       </div>
-      <div style={{padding:10,display:"flex",flexDirection:"column",gap:5}}>
+      <div className="sortie-demopanel-scroll" style={{padding:10,display:"flex",flexDirection:"column",gap:5,overflowY:"auto",flex:1,minHeight:0}}>
         {SCENARIOS.map(s=>(
           <button key={s.id} onClick={()=>{setScenarioId(s.id);onClose();}}
-            style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 11px",
+            style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 11px",flexShrink:0,
               border:`1px solid ${scenarioId===s.id?s.color:C.border}`,borderRadius:5,
               background:scenarioId===s.id?`${s.color}14`:C.surface,cursor:"pointer",textAlign:"left"}}>
             <div style={{width:7,height:7,borderRadius:"50%",background:s.color,flexShrink:0,marginTop:3}}/>
@@ -404,7 +412,7 @@ function DemoPanel({scenarioId,setScenarioId,onClose}) {
           </button>
         ))}
       </div>
-      <div style={{padding:"6px 14px",borderTop:`1px solid ${C.border}`}}>
+      <div style={{padding:"6px 14px",borderTop:`1px solid ${C.border}`,flexShrink:0}}>
         <span style={{fontFamily:F,fontSize:8,color:C.dim,letterSpacing:1}}>
           DEMO MODE · All project data is fictional
         </span>
@@ -934,21 +942,25 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
           <>
             <div><div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:5}}>ANALYSIS</div>
               <div style={{fontFamily:FB,fontSize:13,color:C.text,lineHeight:1.6}}>{d?.analysis}</div></div>
-            {d?.briefingItems?.length>0&&(
+            {(()=>{
+              const valid=(d?.briefingItems||[]).filter(it=>it&&it.title&&it.detail&&String(it.detail).trim().length>0);
+              return valid.length>0&&(
               <div style={{display:"flex",flexDirection:"column",gap:5}}>
                 <div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:2}}>CRITICAL ITEMS</div>
-                {d.briefingItems.map((item,i)=>{
-                  const sc=item.severity==="critical"?C.red:item.severity==="warning"?C.amber:C.accent;
+                {valid.map((item,i)=>{
+                  const sev=String(item.severity||"info").toLowerCase();
+                  const sc=sev==="critical"?C.red:sev==="warning"?C.amber:C.accent;
                   return (
                     <div key={i} style={{display:"flex",gap:8,padding:"6px 10px",background:`${sc}10`,border:`1px solid ${sc}44`,borderRadius:4}}>
-                      <span style={{flexShrink:0,fontSize:12}}>{item.severity==="critical"?"🔴":item.severity==="warning"?"🟡":"🔵"}</span>
+                      <span style={{flexShrink:0,fontSize:12}}>{sev==="critical"?"🔴":sev==="warning"?"🟡":"🔵"}</span>
                       <div><div style={{fontFamily:F,fontSize:11,fontWeight:700,color:sc}}>{item.title}</div>
                         <div style={{fontFamily:FB,fontSize:10,color:C.text,lineHeight:1.4,marginTop:1}}>{item.detail}</div></div>
                     </div>
                   );
                 })}
               </div>
-            )}
+              );
+            })()}
             {d?.recommendation&&<div>
               <div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:4}}>RECOMMENDED NEXT STEP</div>
               <div style={{fontFamily:FB,fontSize:13,color:C.white,lineHeight:1.5}}>{d.recommendation}</div>
@@ -1524,8 +1536,18 @@ PHASE BLOCKING RULE: Only the current active phase matters for revenue recovery.
 
 THREE MODES:
 MODE 1 — EXPLICIT OVERRIDE: Manager names specific engineer and project. Execute it. Validate cert for the active phase. Set isBriefing:false.
-MODE 2 — AI OPTIMIZATION: Match cert to active phase. Prefer available/freed engineers; recommend the highest-revenue at-risk project they can cover. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one (set fromProjectId and fromPhase). Pick the swap with the largest net revenue recovery (target.revenue minus source.revenue). Set isBriefing:false.
-MODE 3 — BRIEFING: "exposure", "status", "what's at risk", "who's available", "briefing". Set isBriefing:true, proposedChange:null. Analyze by phase — which phases are bottlenecks, which engineers are freed, what's the highest-value action.
+MODE 2 — AI OPTIMIZATION: Match cert to active phase. Prefer available/freed engineers; recommend the highest-revenue at-risk project they can cover. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. The reassignment is immediate; do NOT reason about waiting for the source project to finish first. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue); ignore travel distance as a tiebreaker unless two swaps yield equal revenue recovery. CRITICAL: For MODE 2, proposedChange MUST be populated (never null) whenever any engineer in deployedEngineers holds the required cert — even if all candidates are currently deployed. Only return proposedChange:null if literally zero engineers in the entire roster have the required cert. Set isBriefing:false.
+MODE 3 — BRIEFING: "exposure", "status", "what's at risk", "who's available", "briefing". Set isBriefing:true, proposedChange:null. Each briefingItem is a CONCRETE FINDING about the current state — NOT a category label or section header. The "title" IS the finding in 3-8 words. The "detail" is one full sentence with specifics — project IDs (P##), dollar amounts, engineer names, or city names pulled from CURRENT STATE. Severity goes in the severity field, never in the title text. Aim for 3-6 items ordered by revenue impact.
+
+GOOD briefingItems (do this — title is the finding, detail has specifics, severity is set):
+{ "severity":"critical", "title":"6 networking projects blocked", "detail":"P16, P18, P19, P20, P23, P25 are stalled in networking phase totaling $2.36M in queued revenue." }
+{ "severity":"warning", "title":"Megan O'Brien (NET02) out sick", "detail":"Intel Lab P11 ($420K, 5 days left) loses its only assigned networking engineer with no qualified bench replacement." }
+{ "severity":"info", "title":"3 engineers freed for redeployment", "detail":"INS02 (Dallas), INS07 (San Francisco), and NET08 (Las Vegas) became bench-available due to parts backorder." }
+
+BAD briefingItems (NEVER do this — these are outline labels with empty details and severity baked into the title):
+{ "severity":"info", "title":"NETWORKING BOTTLENECK — CRITICAL", "detail":"" }
+{ "severity":"info", "title":"STRATEGIC OPTIONS", "detail":"" }
+{ "severity":"info", "title":"ENGINEER AVAILABILITY & LOCATION", "detail":"" }
 
 Respond ONLY with valid JSON, no markdown:
 {
