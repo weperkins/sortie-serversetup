@@ -1,11 +1,57 @@
 import { useState, useEffect, useRef } from "react";
 
+// ── RESPONSIVE HOOK ────────────────────────────────────────────────────────
+// Most sizing is handled by fluid clamp() values in the design tokens. This
+// hook exists only for layout decisions that require true conditional rendering:
+// auto-collapsing roster on narrow containers, switching board to list-default,
+// and turning the roster into an overlay drawer on phone-class viewports.
+function useViewport() {
+  const compute = w => ({
+    vw: w,
+    narrow: w < 1100,    // auto-default board to list, auto-collapse roster
+    mobile: w < 768,     // roster becomes overlay drawer instead of sidebar
+  });
+  const [v, setV] = useState(compute(typeof window !== "undefined" ? window.innerWidth : 1600));
+  useEffect(() => {
+    const handler = () => setV(prev => {
+      const next = compute(window.innerWidth);
+      return (next.narrow === prev.narrow && next.mobile === prev.mobile) ? prev : next;
+    });
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return v;
+}
+
 // ── THEME ──────────────────────────────────────────────────────────────────
 const C = {
   bg:"#06101E", surface:"#091624", card:"#0C1D35",
   border:"#18334F", borderBrt:"#264F78", accent:"#1A7FFF", accentDim:"#0A3A7A",
   text:"#C0D4E8", dim:"#567090", white:"#EEF4FF",
   green:"#00D080", amber:"#FF9400", red:"#FF3355", teal:"#00C8C8",
+};
+
+// ── DESIGN TOKENS ──────────────────────────────────────────────────────────
+// Fluid type scale via clamp(min, preferred, max). Scales smoothly with viewport
+// width — no breakpoints, no stair-steps. Use these instead of raw px font sizes.
+const T = {
+  xxs:  "clamp(8px, 0.45vw + 4px, 10px)",    // tiny labels, status badges
+  xs:   "clamp(9px, 0.55vw + 5px, 11px)",    // micro labels, dim metadata
+  sm:   "clamp(10px, 0.6vw + 6px, 12px)",    // captions, secondary text
+  base: "clamp(12px, 0.7vw + 7px, 14px)",    // body text
+  md:   "clamp(13px, 0.8vw + 8px, 15px)",    // emphasized body, card titles
+  lg:   "clamp(15px, 1.1vw + 9px, 18px)",    // section titles
+  xl:   "clamp(18px, 1.4vw + 11px, 22px)",   // brand wordmark
+  xxl:  "clamp(20px, 1.6vw + 12px, 26px)",   // hero metrics in header
+};
+// Fluid spacing scale — same idea for padding, gap, margin.
+const S = {
+  s1: "clamp(2px, 0.15vw + 1px, 4px)",
+  s2: "clamp(4px, 0.2vw + 2px, 6px)",
+  s3: "clamp(6px, 0.35vw + 3px, 10px)",
+  s4: "clamp(8px, 0.5vw + 5px, 14px)",
+  s5: "clamp(12px, 0.8vw + 7px, 20px)",
+  s6: "clamp(16px, 1.2vw + 9px, 28px)",
 };
 
 // ── SKILL TYPES ────────────────────────────────────────────────────────────
@@ -335,35 +381,29 @@ const FM = "'JetBrains Mono',monospace";
 function Header({scenarioId,atRisk,util,deployed,demoOpen,setDemoOpen}) {
   const sc = SCENARIOS.find(s=>s.id===scenarioId)||SCENARIOS[0];
   return (
-    <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"0 20px",
-      display:"flex",alignItems:"center",gap:20,height:56,flexShrink:0}}>
-      <svg width="22" height="22" viewBox="0 0 26 26" fill="none">
+    <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:`0 ${S.s5}`,
+      display:"flex",alignItems:"center",gap:S.s5,height:"clamp(48px, 4.5vw + 30px, 60px)",flexShrink:0}}>
+      <svg width="22" height="22" viewBox="0 0 26 26" fill="none" style={{flexShrink:0}}>
         <polygon points="13,2 24,20 2,20" fill="none" stroke={C.accent} strokeWidth="1.5"/>
         <circle cx="13" cy="14" r="3" fill={C.accent}/>
         <line x1="13" y1="2" x2="13" y2="11" stroke={C.accent} strokeWidth="1.5"/>
       </svg>
-      <div>
-        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-          <span style={{fontFamily:F,fontSize:22,fontWeight:800,color:C.white,letterSpacing:3}}>SORTIE</span>
-          <span style={{fontFamily:F,fontSize:10,fontWeight:600,color:C.dim,letterSpacing:2}}>WORKFORCE OPS</span>
-        </div>
-        <div style={{fontFamily:FB,fontSize:9,color:C.dim}}>Revenue-weighted deployment intelligence for enterprise server installations</div>
-      </div>
+      <span style={{fontFamily:F,fontSize:T.xl,fontWeight:800,color:C.white,letterSpacing:3,flexShrink:0}}>SORTIE</span>
       {scenarioId!==0&&(
-        <div style={{display:"flex",alignItems:"center",gap:5,background:`${sc.color}18`,
-          border:`1px solid ${sc.color}55`,borderRadius:4,padding:"2px 10px",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:S.s2,background:`${sc.color}18`,
+          border:`1px solid ${sc.color}55`,borderRadius:4,padding:`${S.s1} ${S.s3}`,flexShrink:0}}>
           <div style={{width:5,height:5,borderRadius:"50%",background:sc.color}}/>
-          <span style={{fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1.5,color:sc.color}}>{sc.name.toUpperCase()}</span>
+          <span style={{fontFamily:F,fontSize:T.xs,fontWeight:700,letterSpacing:1.5,color:sc.color}}>{sc.name.toUpperCase()}</span>
         </div>
       )}
-      <div style={{flex:1}}/>
+      <div style={{flex:1,minWidth:0}}/>
       {[{l:"REVENUE AT RISK",v:fmtRev(atRisk),c:atRisk>0?C.red:C.green},
         {l:"UTILIZATION",v:`${util}%`,c:util>=90?C.green:util>=70?C.amber:C.red},
-        {l:"DEPLOYED",v:`${deployed}/26`,c:C.text},
+        {l:"DEPLOYED",v:`${deployed}/${ENGINEERS.length}`,c:C.text},
       ].map(m=>(
-        <div key={m.l} style={{textAlign:"right",minWidth:88}}>
-          <div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:1.5,color:C.dim}}>{m.l}</div>
-          <div style={{fontFamily:FM,fontSize:18,fontWeight:500,color:m.c,lineHeight:1.1}}>{m.v}</div>
+        <div key={m.l} style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontFamily:F,fontSize:T.xxs,fontWeight:700,letterSpacing:1.5,color:C.dim}}>{m.l}</div>
+          <div style={{fontFamily:FM,fontSize:T.xxl,fontWeight:500,color:m.c,lineHeight:1.1}}>{m.v}</div>
         </div>
       ))}
       <button onClick={()=>setDemoOpen(v=>!v)} title="Simulation controls"
@@ -381,8 +421,10 @@ function Header({scenarioId,atRisk,util,deployed,demoOpen,setDemoOpen}) {
 }
 
 function DemoPanel({scenarioId,setScenarioId,onClose}) {
+  const HEAD_TOP = "clamp(49px, 4.5vw + 31px, 61px)";
   return (
-    <div style={{position:"absolute",top:57,right:0,width:320,maxHeight:"calc(100vh - 57px)",
+    <div style={{position:"absolute",top:HEAD_TOP,right:0,width:"clamp(260px, 24vw, 340px)",
+      maxHeight:`calc(100vh - ${HEAD_TOP})`,
       background:C.card,borderLeft:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,
       zIndex:200,display:"flex",flexDirection:"column"}}>
       <style>{`
@@ -491,29 +533,85 @@ function EngineerCard({engineer, status, reason, phaseAssign, phaseComplete}) {
   );
 }
 
-function Roster({engineers, scenario, phaseAssign, phaseComplete}) {
+function Roster({engineers, scenario, phaseAssign, phaseComplete, collapsed, onToggleCollapse, mobile, mobileOpen, onMobileClose}) {
   const groups = Object.keys(MODALITY_MAP).map(mod=>({
     mod, color:MODALITY_CLR[mod], engineers:engineers.filter(i=>i.modality===mod),
   }));
   const disruptedCount = Object.keys(scenario.disruptions||{}).length;
   const freedCount     = Object.keys(scenario.freedEngineers||{}).length;
   const availCount     = engineers.filter(i=>engineerStatus(i.id,scenario,phaseAssign)==="available").length;
+
+  // Mobile mode: overlay drawer that slides in over the board, doesn't consume layout
+  if (mobile) {
+    if (!mobileOpen) return null;
+    return (
+      <div onClick={onMobileClose} style={{position:"absolute",inset:0,background:"rgba(4,8,18,0.7)",zIndex:150,display:"flex"}}>
+        <div onClick={e=>e.stopPropagation()} style={{width:"min(280px, 80vw)",height:"100%",background:C.surface,
+          borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column"}}>
+          <div style={{padding:`${S.s3} ${S.s4}`,borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:S.s2}}>
+            <span style={{fontFamily:F,fontSize:T.xs,fontWeight:700,letterSpacing:2,color:C.dim}}>ENGINEER ROSTER</span>
+            <button onClick={onMobileClose} style={{marginLeft:"auto",background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:18}}>✕</button>
+          </div>
+          <div style={{overflowY:"auto",flex:1}}>
+            {groups.map(({mod,color,engineers:gi})=>(
+              <div key={mod}>
+                <div style={{padding:`${S.s2} ${S.s4}`,background:`${color}12`,borderBottom:`1px solid ${color}30`,
+                  display:"flex",alignItems:"center",gap:S.s2}}>
+                  <div style={{width:5,height:5,borderRadius:"50%",background:color,flexShrink:0}}/>
+                  <span style={{fontFamily:F,fontSize:T.xs,fontWeight:700,letterSpacing:2,color}}>{mod.toUpperCase()}</span>
+                </div>
+                {gi.map(i=>(
+                  <EngineerCard key={i.id} engineer={i}
+                    status={engineerStatus(i.id,scenario,phaseAssign)}
+                    reason={scenario.disruptions[i.id]||scenario.freedEngineers[i.id]}
+                    phaseAssign={phaseAssign} phaseComplete={phaseComplete}/>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Collapsed: thin vertical strip with toggle to expand
+  if (collapsed) {
+    return (
+      <div style={{width:38,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",
+        flexShrink:0,background:C.surface,alignItems:"center",paddingTop:S.s2,gap:S.s2}}>
+        <button onClick={onToggleCollapse} title="Expand roster"
+          style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:14,padding:4}}>›</button>
+        <div style={{writingMode:"vertical-rl",transform:"rotate(180deg)",fontFamily:F,fontSize:T.xs,
+          fontWeight:700,letterSpacing:2,color:C.dim,marginTop:S.s2}}>ENGINEER ROSTER</div>
+        <div style={{marginTop:"auto",marginBottom:S.s3,display:"flex",flexDirection:"column",gap:S.s1,alignItems:"center"}}>
+          {disruptedCount>0&&<div title={`${disruptedCount} out`} style={{fontFamily:F,fontSize:T.xs,fontWeight:700,color:C.red}}>{disruptedCount}</div>}
+          {freedCount>0&&<div title={`${freedCount} freed`} style={{fontFamily:F,fontSize:T.xs,fontWeight:700,color:C.teal}}>{freedCount}</div>}
+          <div title={`${availCount} available`} style={{fontFamily:F,fontSize:T.xs,fontWeight:700,color:C.accent}}>{availCount}</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Default sidebar — fluid width
   return (
-    <div style={{width:260,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,background:C.surface}}>
-      <div style={{padding:"8px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:6}}>
-        <span style={{fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:2,color:C.dim}}>ENGINEER ROSTER</span>
-        {disruptedCount>0&&<span style={{fontFamily:F,fontSize:8,fontWeight:700,color:C.red,marginLeft:"auto"}}>{disruptedCount} OUT</span>}
-        {freedCount>0&&<span style={{fontFamily:F,fontSize:8,fontWeight:700,color:C.teal,marginLeft:disruptedCount?"4px":"auto"}}>{freedCount} FREED</span>}
-        <span style={{fontFamily:F,fontSize:8,fontWeight:700,color:C.accent,marginLeft:(disruptedCount||freedCount)?4:"auto"}}>{availCount} AVAIL</span>
+    <div style={{width:"clamp(190px, 17vw, 260px)",borderRight:`1px solid ${C.border}`,
+      display:"flex",flexDirection:"column",flexShrink:0,background:C.surface}}>
+      <div style={{padding:`${S.s3} ${S.s4}`,borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:S.s2}}>
+        <button onClick={onToggleCollapse} title="Collapse roster"
+          style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:14,padding:0,marginRight:2}}>‹</button>
+        <span style={{fontFamily:F,fontSize:T.xs,fontWeight:700,letterSpacing:2,color:C.dim}}>ENGINEER ROSTER</span>
+        {disruptedCount>0&&<span style={{fontFamily:F,fontSize:T.xxs,fontWeight:700,color:C.red,marginLeft:"auto"}}>{disruptedCount} OUT</span>}
+        {freedCount>0&&<span style={{fontFamily:F,fontSize:T.xxs,fontWeight:700,color:C.teal,marginLeft:disruptedCount?"4px":"auto"}}>{freedCount} FREED</span>}
+        <span style={{fontFamily:F,fontSize:T.xxs,fontWeight:700,color:C.accent,marginLeft:(disruptedCount||freedCount)?4:"auto"}}>{availCount} AVAIL</span>
       </div>
       <div style={{overflowY:"auto",flex:1}}>
         {groups.map(({mod,color,engineers:gi})=>(
           <div key={mod}>
-            <div style={{padding:"4px 12px",background:`${color}12`,borderBottom:`1px solid ${color}30`,
-              display:"flex",alignItems:"center",gap:6}}>
+            <div style={{padding:`${S.s2} ${S.s4}`,background:`${color}12`,borderBottom:`1px solid ${color}30`,
+              display:"flex",alignItems:"center",gap:S.s2}}>
               <div style={{width:5,height:5,borderRadius:"50%",background:color,flexShrink:0}}/>
-              <span style={{fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:2,color}}>{mod.toUpperCase()}</span>
-              <span style={{fontFamily:F,fontSize:8,color,opacity:0.7,marginLeft:"auto"}}>
+              <span style={{fontFamily:F,fontSize:T.xs,fontWeight:700,letterSpacing:2,color}}>{mod.toUpperCase()}</span>
+              <span style={{fontFamily:F,fontSize:T.xxs,color,opacity:0.7,marginLeft:"auto"}}>
                 {gi.filter(i=>engineerStatus(i.id,scenario,phaseAssign)==="deployed").length}/{gi.length}
               </span>
             </div>
@@ -544,65 +642,139 @@ function ProjectCard({project, phaseAssign, phaseComplete, onMarkComplete}) {
   return (
     <div style={{background:isAtRisk?`${C.red}0D`:isUnder?`${C.amber}06`:C.card,
       border:`1px solid ${borderClr}`,borderLeft:`3px solid ${borderClr}`,
-      borderRadius:6,padding:"9px 11px",display:"flex",flexDirection:"column",gap:5,
+      borderRadius:6,padding:`${S.s3} ${S.s4}`,display:"flex",flexDirection:"column",gap:S.s2,
       boxShadow:isAtRisk?`0 0 10px ${C.red}22`:undefined}}>
       {/* Status banner */}
       {(isAtRisk||isUnder)&&(
-        <div style={{fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:2,
+        <div style={{fontFamily:F,fontSize:T.xs,fontWeight:700,letterSpacing:2,
           color:isAtRisk?C.red:C.amber,background:isAtRisk?`${C.red}20`:`${C.amber}18`,
-          padding:"2px 6px",borderRadius:3,textAlign:"center"}}>
+          padding:`${S.s1} ${S.s2}`,borderRadius:3,textAlign:"center"}}>
           {isAtRisk?`⚠ AT RISK — ${currentPhase.toUpperCase()} UNCOVERED`:`! UNDERSTAFFED — ${assigned.length}/${required} ENGINEERS`}
         </div>
       )}
       {/* Name + Revenue */}
-      <div style={{display:"flex",alignItems:"flex-start",gap:6}}>
-        <div style={{flex:1}}>
-          <div style={{fontFamily:F,fontSize:13,fontWeight:700,color:C.white,lineHeight:1.2}}>{project.name}</div>
-          <div style={{fontFamily:FB,fontSize:10,color:C.text,marginTop:1}}>{cust.name}</div>
+      <div style={{display:"flex",alignItems:"flex-start",gap:S.s3}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontFamily:F,fontSize:T.md,fontWeight:700,color:C.white,lineHeight:1.2}}>{project.name}</div>
+          <div style={{fontFamily:FB,fontSize:T.sm,color:C.text,marginTop:1}}>{cust.name}</div>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
-          <div style={{fontFamily:FM,fontSize:14,fontWeight:500,color:C.white}}>{fmtRev(project.revenue)}</div>
-          <div style={{fontFamily:FM,fontSize:9,color:urgC,marginTop:1}}>{project.daysLeft}d left</div>
+          <div style={{fontFamily:FM,fontSize:T.md,fontWeight:500,color:C.white}}>{fmtRev(project.revenue)}</div>
+          <div style={{fontFamily:FM,fontSize:T.xs,color:urgC,marginTop:1}}>{project.daysLeft}d left</div>
         </div>
       </div>
       {/* Phase progress bar */}
       <PhaseProgressBar pid={project.id} phaseAssign={phaseAssign} phaseComplete={phaseComplete} project={project}/>
       {/* Current phase + assigned engineers */}
-      <div style={{display:"flex",alignItems:"center",gap:5,borderTop:`1px solid ${C.border}`,paddingTop:5}}>
-        <span style={{fontFamily:FM,fontSize:8,color:phaseClr,background:`${phaseClr}18`,
-          padding:"1px 4px",borderRadius:2}}>{currentPhase.toUpperCase()}</span>
-        <span style={{fontFamily:FM,fontSize:8,color:C.dim}}>needs {project.phaseCerts[currentPhase]}</span>
+      <div style={{display:"flex",alignItems:"center",gap:S.s2,borderTop:`1px solid ${C.border}`,paddingTop:S.s2,flexWrap:"wrap"}}>
+        <span style={{fontFamily:FM,fontSize:T.xxs,color:phaseClr,background:`${phaseClr}18`,
+          padding:`${S.s1} ${S.s2}`,borderRadius:2}}>{currentPhase.toUpperCase()}</span>
+        <span style={{fontFamily:FM,fontSize:T.xxs,color:C.dim}}>needs {project.phaseCerts[currentPhase]}</span>
         <div style={{flex:1}}/>
         {assigned.length>0?(
-          <div style={{display:"flex",gap:3,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          <div style={{display:"flex",gap:S.s1,flexWrap:"wrap",justifyContent:"flex-end"}}>
             {assigned.map(e=>(
-              <span key={e.id} style={{fontFamily:FB,fontSize:9,color:C.green}}>✓ {e.name.split(" ")[0]}</span>
+              <span key={e.id} style={{fontFamily:FB,fontSize:T.xs,color:C.green}}>✓ {e.name.split(" ")[0]}</span>
             ))}
           </div>
         ):(
-          <span style={{fontFamily:F,fontSize:9,fontWeight:700,color:C.red}}>No coverage</span>
+          <span style={{fontFamily:F,fontSize:T.xs,fontWeight:700,color:C.red}}>No coverage</span>
         )}
       </div>
       {/* Mark complete button */}
       {phaseStatus==="covered"&&(
         <button onClick={()=>onMarkComplete(project.id, currentPhase)}
-          style={{fontFamily:F,fontWeight:700,fontSize:9,letterSpacing:1,padding:"3px 8px",
+          style={{fontFamily:F,fontWeight:700,fontSize:T.xs,letterSpacing:1,padding:`${S.s2} ${S.s3}`,
             border:`1px solid ${phaseClr}55`,borderRadius:3,background:`${phaseClr}12`,
             color:phaseClr,cursor:"pointer",width:"100%",textAlign:"center"}}>
           ✓ MARK {currentPhase.toUpperCase()} COMPLETE
         </button>
       )}
       {/* Footer */}
-      <div style={{fontFamily:FB,fontSize:9,color:C.dim}}>{cust.city} · {project.tier}</div>
+      <div style={{fontFamily:FB,fontSize:T.xs,color:C.dim}}>{cust.city} · {project.tier}</div>
     </div>
   );
 }
 
-function ProjectBoard({projects, phaseAssign, phaseComplete, onMarkComplete, heatmapFilter, onClearFilter}) {
+// Dense single-row view of a project. ~3x the vertical density of ProjectCard.
+function ProjectListRow({project, phaseAssign, phaseComplete, onMarkComplete}) {
+  const cust         = CUSTOMERS[project.customer];
+  const urgC         = urgClr(project.daysLeft);
+  const currentPhase = getCurrentPhase(project.id, phaseComplete);
+  const phaseStatus  = getPhaseStatus(project.id, currentPhase, project, phaseAssign, phaseComplete);
+  const assigned     = (phaseAssign[`${project.id}-${currentPhase}`]||[]).map(id=>getEngineer(id)).filter(Boolean);
+  const required     = project.phaseRequired[currentPhase];
+  const phaseClr     = MODALITY_CLR[currentPhase==="delivery"?"Delivery":currentPhase==="installation"?"Installation":"Networking"]||C.accent;
+  const isAtRisk     = phaseStatus==="at_risk";
+  const isUnder      = phaseStatus==="understaffed";
+  const borderClr    = isAtRisk?C.red:isUnder?C.amber:phaseClr;
+  const statusBadge  = isAtRisk?{label:"AT RISK",color:C.red}:isUnder?{label:`${assigned.length}/${required}`,color:C.amber}:{label:"COVERED",color:C.green};
+
+  return (
+    <div style={{background:isAtRisk?`${C.red}0D`:isUnder?`${C.amber}06`:C.card,
+      border:`1px solid ${borderClr}`,borderLeft:`3px solid ${borderClr}`,
+      borderRadius:5,padding:`${S.s2} ${S.s3}`,display:"flex",alignItems:"center",gap:S.s4,
+      flexWrap:"wrap",rowGap:S.s2}}>
+      {/* Status badge */}
+      <div style={{fontFamily:F,fontSize:T.xxs,fontWeight:700,letterSpacing:1.5,
+        color:statusBadge.color,background:`${statusBadge.color}18`,
+        padding:`${S.s1} ${S.s2}`,borderRadius:3,flexShrink:0,minWidth:62,textAlign:"center"}}>
+        {statusBadge.label}
+      </div>
+      {/* Name + customer (flex 1) */}
+      <div style={{flex:"2 1 200px",minWidth:0}}>
+        <div style={{fontFamily:F,fontSize:T.base,fontWeight:700,color:C.white,
+          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{project.name}</div>
+        <div style={{fontFamily:FB,fontSize:T.xs,color:C.dim,
+          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.name} · {cust.city}</div>
+      </div>
+      {/* Phase + cert */}
+      <div style={{flex:"1 1 120px",display:"flex",flexDirection:"column",gap:1,minWidth:0}}>
+        <span style={{fontFamily:FM,fontSize:T.xxs,fontWeight:700,letterSpacing:1.5,color:phaseClr}}>
+          {currentPhase.toUpperCase()}
+        </span>
+        <span style={{fontFamily:FM,fontSize:T.xxs,color:C.dim,whiteSpace:"nowrap",
+          overflow:"hidden",textOverflow:"ellipsis"}}>needs {project.phaseCerts[currentPhase]}</span>
+      </div>
+      {/* Revenue + days */}
+      <div style={{flex:"0 0 auto",textAlign:"right"}}>
+        <div style={{fontFamily:FM,fontSize:T.base,fontWeight:500,color:C.white,lineHeight:1.1}}>{fmtRev(project.revenue)}</div>
+        <div style={{fontFamily:FM,fontSize:T.xxs,color:urgC}}>{project.daysLeft}d</div>
+      </div>
+      {/* Assigned engineers */}
+      <div style={{flex:"1 1 140px",textAlign:"right",minWidth:0,
+        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+        {assigned.length>0?(
+          <span style={{fontFamily:FB,fontSize:T.xs,color:C.green}}>
+            ✓ {assigned.map(e=>e.name.split(" ")[0]).join(", ")}
+          </span>
+        ):(
+          <span style={{fontFamily:F,fontSize:T.xs,fontWeight:700,color:C.red}}>No coverage</span>
+        )}
+      </div>
+      {/* Action */}
+      {phaseStatus==="covered"&&(
+        <button onClick={()=>onMarkComplete(project.id, currentPhase)}
+          style={{fontFamily:F,fontWeight:700,fontSize:T.xxs,letterSpacing:1,padding:`${S.s1} ${S.s3}`,
+            border:`1px solid ${phaseClr}55`,borderRadius:3,background:`${phaseClr}12`,
+            color:phaseClr,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
+          ✓ COMPLETE
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ProjectBoard({projects, phaseAssign, phaseComplete, onMarkComplete, heatmapFilter, onClearFilter, narrow}) {
   const [phaseFilter,setPhaseFilter] = useState(null);
   const [riskOnly,setRiskOnly]       = useState(false);
   const [underOnly,setUnderOnly]     = useState(false);
-  const [view,setView]               = useState("grid");
+  // Default view: list on narrow viewports (more visible at once), grid on wide.
+  const [view,setView]               = useState(narrow?"list":"grid");
+  // Sort criterion is independent of view. STATUS = current behavior (status rank
+  // primary, revenue secondary). DAYS = pure ascending days-left, regardless of
+  // status — surfaces the most time-pressing projects. REVENUE = pure descending.
+  const [sortBy,setSortBy]           = useState("status");
 
   // Apply heatmap click filter
   const activeFilter = heatmapFilter || phaseFilter;
@@ -621,6 +793,10 @@ function ProjectBoard({projects, phaseAssign, phaseComplete, onMarkComplete, hea
     if (underOnly && status !== "understaffed") return false;
     return true;
   }).sort((a,b)=>{
+    if (sortBy==="days")    return a.daysLeft - b.daysLeft;
+    if (sortBy==="revenue") return b.revenue  - a.revenue;
+    // sortBy === "status" (default): at-risk first, then understaffed, then covered;
+    // within same status, by revenue (or revenue/day for the urgency view).
     const sa = getPhaseStatus(a.id,getCurrentPhase(a.id,phaseComplete),a,phaseAssign,phaseComplete);
     const sb = getPhaseStatus(b.id,getCurrentPhase(b.id,phaseComplete),b,phaseAssign,phaseComplete);
     const rank = s => s==="at_risk"?0:s==="understaffed"?1:2;
@@ -633,21 +809,21 @@ function ProjectBoard({projects, phaseAssign, phaseComplete, onMarkComplete, hea
   const underCount     = projects.filter(p=>getPhaseStatus(p.id,getCurrentPhase(p.id,phaseComplete),p,phaseAssign,phaseComplete)==="understaffed").length;
 
   const pill=(label,active,onClick,color,key)=>(
-    <button key={key} onClick={onClick} style={{fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1,
-      padding:"2px 7px",border:`1px solid ${active?color:`${color}44`}`,borderRadius:3,cursor:"pointer",
+    <button key={key} onClick={onClick} style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:1,
+      padding:`${S.s1} ${S.s3}`,border:`1px solid ${active?color:`${color}44`}`,borderRadius:3,cursor:"pointer",
       whiteSpace:"nowrap",background:active?`${color}28`:"transparent",color:active?color:`${color}88`}}>{label}</button>
   );
 
   return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",background:C.bg}}>
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",background:C.bg,minWidth:0}}>
       {/* Filter bar */}
-      <div style={{padding:"6px 12px",borderBottom:`1px solid ${C.border}`,background:C.surface,
-        display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",flexShrink:0}}>
+      <div style={{padding:`${S.s2} ${S.s4}`,borderBottom:`1px solid ${C.border}`,background:C.surface,
+        display:"flex",alignItems:"center",gap:S.s1,flexWrap:"wrap",flexShrink:0}}>
         {pill("ALL",!activeFilter&&!riskOnly&&!underOnly,()=>{setPhaseFilter(null);setRiskOnly(false);setUnderOnly(false);if(onClearFilter)onClearFilter();},C.dim)}
-        <div style={{width:1,height:12,background:C.border,margin:"0 2px"}}/>
+        <div style={{width:1,height:12,background:C.border,margin:`0 ${S.s1}`}}/>
         {pill(`AT RISK${atRiskCount>0?` (${atRiskCount})`:""}`,riskOnly,()=>{setRiskOnly(v=>!v);setUnderOnly(false);setPhaseFilter(null);if(onClearFilter)onClearFilter();},C.red)}
         {underCount>0&&pill(`UNDERSTAFFED (${underCount})`,underOnly,()=>{setUnderOnly(v=>!v);setRiskOnly(false);setPhaseFilter(null);if(onClearFilter)onClearFilter();},C.amber)}
-        <div style={{width:1,height:12,background:C.border,margin:"0 2px"}}/>
+        <div style={{width:1,height:12,background:C.border,margin:`0 ${S.s1}`}}/>
         {["delivery","installation","networking"].map(ph=>{
           const cnt=projects.filter(p=>getCurrentPhase(p.id,phaseComplete)===ph).length;
           const clr=MODALITY_CLR[ph==="delivery"?"Delivery":ph==="installation"?"Installation":"Networking"];
@@ -655,27 +831,44 @@ function ProjectBoard({projects, phaseAssign, phaseComplete, onMarkComplete, hea
             ()=>{setPhaseFilter(v=>v===ph?null:ph);setRiskOnly(false);setUnderOnly(false);if(onClearFilter)onClearFilter();},clr,ph);
         })}
         {heatmapFilter&&(
-          <button onClick={onClearFilter} style={{fontFamily:F,fontSize:9,fontWeight:700,padding:"2px 7px",
+          <button onClick={onClearFilter} style={{fontFamily:F,fontSize:T.xs,fontWeight:700,padding:`${S.s1} ${S.s3}`,
             border:`1px solid ${C.teal}`,borderRadius:3,cursor:"pointer",background:`${C.teal}20`,color:C.teal}}>
             ◉ MATRIX FILTER × CLEAR
           </button>
         )}
         <div style={{flex:1}}/>
+        <div style={{display:"flex",alignItems:"center",gap:S.s2}}>
+          <span style={{fontFamily:F,fontSize:T.xxs,fontWeight:700,letterSpacing:1.5,color:C.dim}}>SORT</span>
+          <div style={{display:"flex",gap:2,background:C.card,borderRadius:4,padding:2}}>
+            {[{id:"status",l:"STATUS"},{id:"days",l:"DAYS"},{id:"revenue",l:"REV"}].map(s=>(
+              <button key={s.id} onClick={()=>setSortBy(s.id)}
+                style={{fontFamily:F,fontSize:T.sm,fontWeight:700,padding:`${S.s1} ${S.s3}`,borderRadius:3,border:"none",
+                  cursor:"pointer",background:sortBy===s.id?C.accent:"transparent",color:sortBy===s.id?C.white:C.dim}}>{s.l}</button>
+            ))}
+          </div>
+        </div>
         <div style={{display:"flex",gap:2,background:C.card,borderRadius:4,padding:2}}>
-          {[{id:"grid",l:"⊞ Board"},{id:"timeline",l:"≡ Urgency"}].map(v=>(
+          {[{id:"grid",l:"⊞ Grid"},{id:"list",l:"≡ List"},{id:"timeline",l:"⏱ Urgency"}].map(v=>(
             <button key={v.id} onClick={()=>setView(v.id)}
-              style={{fontFamily:F,fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:3,border:"none",
+              style={{fontFamily:F,fontSize:T.sm,fontWeight:700,padding:`${S.s1} ${S.s3}`,borderRadius:3,border:"none",
                 cursor:"pointer",background:view===v.id?C.accent:"transparent",color:view===v.id?C.white:C.dim}}>{v.l}</button>
           ))}
         </div>
-        <span style={{fontFamily:F,fontSize:9,color:C.dim,letterSpacing:1,marginLeft:6}}>{filtered.length}/{projects.length}</span>
+        <span style={{fontFamily:F,fontSize:T.xs,color:C.dim,letterSpacing:1,marginLeft:S.s2}}>{filtered.length}/{projects.length}</span>
       </div>
       {/* Board */}
-      <div style={{flex:1,overflowY:"auto",padding:12}}>
+      <div style={{flex:1,overflowY:"auto",padding:S.s4}}>
         {filtered.length===0?(
-          <div style={{fontFamily:F,fontSize:12,color:C.dim,letterSpacing:1,textAlign:"center",marginTop:48}}>NO PROJECTS MATCH</div>
+          <div style={{fontFamily:F,fontSize:T.base,color:C.dim,letterSpacing:1,textAlign:"center",marginTop:48}}>NO PROJECTS MATCH</div>
+        ):view==="list"?(
+          <div style={{display:"flex",flexDirection:"column",gap:S.s2}}>
+            {filtered.map(p=>(
+              <ProjectListRow key={p.id} project={p} phaseAssign={phaseAssign}
+                phaseComplete={phaseComplete} onMarkComplete={onMarkComplete}/>
+            ))}
+          </div>
         ):(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:8}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(280px, 100%),1fr))",gap:S.s3}}>
             {filtered.map(p=>(
               <ProjectCard key={p.id} project={p} phaseAssign={phaseAssign}
                 phaseComplete={phaseComplete} onMarkComplete={onMarkComplete}/>
@@ -818,7 +1011,7 @@ function BeforeAfterPanel({result, onClose}) {
     <div style={{position:"absolute",inset:0,background:"rgba(4,8,18,0.88)",display:"flex",
       alignItems:"center",justifyContent:"center",zIndex:100}}>
       <div style={{background:C.card,border:`1px solid ${C.green}88`,borderRadius:8,
-        width:480,maxWidth:"92vw",padding:22,display:"flex",flexDirection:"column",gap:14}}>
+        width:"min(500px, 92vw)",maxHeight:"min(85vh, 700px)",padding:S.s5,display:"flex",flexDirection:"column",gap:S.s4}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{fontFamily:F,fontSize:14,fontWeight:700,letterSpacing:2,color:C.green}}>CHANGE COMMITTED</div>
           <button onClick={onClose} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:18}}>✕</button>
@@ -929,8 +1122,8 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
     <div style={{position:"absolute",inset:0,background:"rgba(4,8,18,0.88)",display:"flex",
       alignItems:"center",justifyContent:"center",zIndex:100}}>
       <div style={{background:C.card,border:`1px solid ${C.borderBrt}`,borderRadius:8,
-        width:isBriefing?600:560,maxWidth:"92vw",maxHeight:"85vh",overflowY:"auto",
-        padding:22,display:"flex",flexDirection:"column",gap:14}}>
+        width:isBriefing?"min(620px, 92vw)":"min(580px, 92vw)",maxHeight:"min(85vh, 800px)",overflowY:"auto",
+        padding:S.s5,display:"flex",flexDirection:"column",gap:S.s4}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{fontFamily:F,fontSize:13,fontWeight:700,letterSpacing:2,
             color:isBriefing?C.teal:C.accent}}>{isBriefing?"SITUATION BRIEFING":"SORTIE RECOMMENDATION"}</div>
@@ -970,12 +1163,33 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
                 padding:"7px 16px",border:`1px solid ${C.border}`,borderRadius:4,background:"transparent",color:C.dim,cursor:"pointer"}}>CLOSE</button>
             </div>
           </>
-        ):(
+        ):(()=>{
+          // Empty-response guard: if Haiku returned no analysis, no recommendation,
+          // AND no proposedChange, we've got nothing to show. Render a helpful
+          // fallback instead of empty labeled sections.
+          const hasAnalysis = d?.analysis && String(d.analysis).trim().length > 0;
+          const hasRecText  = d?.recommendation && String(d.recommendation).trim().length > 0;
+          const hasChange   = change && toProj && toIse;
+          if (!hasAnalysis && !hasRecText && !hasChange) {
+            return (
+              <>
+                <div style={{fontFamily:F,fontSize:T.xs,fontWeight:700,letterSpacing:2,color:C.amber,marginBottom:S.s2}}>NO RECOMMENDATION FORMED</div>
+                <div style={{fontFamily:FB,fontSize:T.base,color:C.text,lineHeight:1.5}}>
+                  I couldn't form a recommendation from that request. Try naming the project (e.g. "Who can cover United Airlines networking?") or naming an engineer (e.g. "Move Ravi to Capital One").
+                </div>
+                <div style={{display:"flex",justifyContent:"flex-end"}}>
+                  <button onClick={onCancel} style={{fontFamily:F,fontWeight:700,fontSize:T.sm,letterSpacing:1.5,
+                    padding:`${S.s2} ${S.s4}`,border:`1px solid ${C.border}`,borderRadius:4,background:"transparent",color:C.dim,cursor:"pointer"}}>CLOSE</button>
+                </div>
+              </>
+            );
+          }
+          return (
           <>
-            <div><div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:4}}>ANALYSIS</div>
-              <div style={{fontFamily:FB,fontSize:13,color:C.text,lineHeight:1.5}}>{d?.analysis}</div></div>
-            <div><div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:4}}>RECOMMENDATION</div>
-              <div style={{fontFamily:FB,fontSize:13,color:C.white,lineHeight:1.5}}>{d?.recommendation}</div></div>
+            {hasAnalysis&&<div><div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:4}}>ANALYSIS</div>
+              <div style={{fontFamily:FB,fontSize:13,color:C.text,lineHeight:1.5}}>{d.analysis}</div></div>}
+            {hasRecText&&<div><div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:4}}>RECOMMENDATION</div>
+              <div style={{fontFamily:FB,fontSize:13,color:C.white,lineHeight:1.5}}>{d.recommendation}</div></div>}
             {change&&toProj&&toIse&&(
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:13}}>
                 <div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:9}}>PROPOSED CHANGE</div>
@@ -1042,7 +1256,8 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
               )}
             </div>
           </>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
@@ -1054,33 +1269,37 @@ const QUICK_CMDS = [
   {label:"Who's available?",icon:"👥"},
 ];
 
-function CommandBar({cmd,setCmd,runCmd,loading,inputRef}) {
+function CommandBar({cmd,setCmd,runCmd,loading,inputRef,onOpenRoster,mobile}) {
   return (
     <div style={{background:C.surface,borderTop:`1px solid ${C.borderBrt}`,flexShrink:0}}>
-      <div style={{padding:"6px 18px 0",display:"flex",gap:5,alignItems:"center"}}>
-        <span style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,flexShrink:0}}>QUICK:</span>
+      <div style={{padding:`${S.s2} ${S.s5} 0`,display:"flex",gap:S.s2,alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{fontFamily:F,fontSize:T.xxs,fontWeight:700,letterSpacing:2,color:C.dim,flexShrink:0}}>QUICK:</span>
         {QUICK_CMDS.map(q=>(
           <button key={q.label} onClick={()=>setCmd(q.label)}
-            style={{fontFamily:FB,fontSize:10,padding:"2px 8px",border:`1px solid ${C.border}`,
+            style={{fontFamily:FB,fontSize:T.sm,padding:`${S.s1} ${S.s3}`,border:`1px solid ${C.border}`,
               borderRadius:12,cursor:"pointer",background:"transparent",color:C.dim,whiteSpace:"nowrap"}}>
             {q.icon} {q.label}
           </button>
         ))}
       </div>
-      <div style={{padding:"8px 18px 12px",display:"flex",gap:12,alignItems:"center"}}>
+      <div style={{padding:`${S.s3} ${S.s5} ${S.s4}`,display:"flex",gap:S.s4,alignItems:"center"}}>
+        {mobile&&onOpenRoster&&(
+          <button onClick={onOpenRoster} title="Open roster" style={{background:C.card,border:`1px solid ${C.border}`,
+            borderRadius:5,padding:`${S.s2} ${S.s3}`,cursor:"pointer",color:C.dim,fontSize:T.md,flexShrink:0}}>☰</button>
+        )}
         <div style={{flexShrink:0,textAlign:"center"}}>
-          <div style={{fontFamily:F,fontSize:12,fontWeight:800,letterSpacing:3,color:C.accent,lineHeight:1}}>SORTIE</div>
-          <div style={{fontFamily:F,fontSize:7,fontWeight:600,letterSpacing:2,color:C.dim,marginTop:1}}>AI</div>
+          <div style={{fontFamily:F,fontSize:T.base,fontWeight:800,letterSpacing:3,color:C.accent,lineHeight:1}}>SORTIE</div>
+          <div style={{fontFamily:F,fontSize:T.xxs,fontWeight:600,letterSpacing:2,color:C.dim,marginTop:1}}>AI</div>
         </div>
         <div style={{width:1,height:30,background:C.border,flexShrink:0}}/>
         <input ref={inputRef} value={cmd} onChange={e=>setCmd(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();runCmd();}}}
           placeholder="e.g. Who can cover United Airlines networking? · Move Ravi to Capital One · What's my exposure?"
-          style={{flex:1,background:C.card,border:`1px solid ${C.borderBrt}`,borderRadius:5,
-            padding:"8px 14px",fontSize:12,outline:"none",lineHeight:1.4,color:C.white,fontFamily:FB}}/>
+          style={{flex:1,minWidth:0,background:C.card,border:`1px solid ${C.borderBrt}`,borderRadius:5,
+            padding:`${S.s3} ${S.s4}`,fontSize:T.base,outline:"none",lineHeight:1.4,color:C.white,fontFamily:FB}}/>
         <button onClick={runCmd} disabled={loading||!cmd.trim()}
           style={{background:loading?C.accentDim:C.accent,color:C.white,border:"none",borderRadius:5,
-            padding:"8px 18px",fontFamily:F,fontWeight:800,fontSize:12,letterSpacing:2,
+            padding:`${S.s3} ${S.s5}`,fontFamily:F,fontWeight:800,fontSize:T.base,letterSpacing:2,
             cursor:loading||!cmd.trim()?"not-allowed":"pointer",flexShrink:0,
             opacity:loading||!cmd.trim()?0.6:1}}>
           {loading?"THINKING…":"EXECUTE"}
@@ -1311,7 +1530,7 @@ function ExportModal({scenarioName, customActive, totalAtRisk, util, deployed,
     <div style={{position:"absolute",inset:0,background:"rgba(4,8,18,0.88)",display:"flex",
       alignItems:"center",justifyContent:"center",zIndex:100}}>
       <div style={{background:C.card,border:`1px solid ${C.borderBrt}`,borderRadius:8,
-        width:580,maxWidth:"92vw",maxHeight:"82vh",display:"flex",flexDirection:"column"}}>
+        width:"min(620px, 92vw)",maxHeight:"min(82vh, 800px)",display:"flex",flexDirection:"column"}}>
         <div style={{padding:"14px 20px",borderBottom:`1px solid ${C.border}`,
           display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{fontFamily:F,fontSize:13,fontWeight:700,letterSpacing:2,color:C.accent}}>EXPORT RECOVERY SUMMARY</div>
@@ -1345,8 +1564,45 @@ function ExportModal({scenarioName, customActive, totalAtRisk, util, deployed,
   );
 }
 
+// Toast that shows the most recent undoable action with an UNDO button.
+// Auto-dismisses after AUTO_HIDE_MS unless the user hovers (preserves intent
+// to read). The undo stack itself outlives the toast — this is just the visible
+// affordance for the most recent entry.
+function UndoSnackbar({entry, onUndo, onDismiss}) {
+  const AUTO_HIDE_MS = 10000;
+  const [hover, setHover] = useState(false);
+  useEffect(()=>{
+    if (!entry || hover) return;
+    const t = setTimeout(onDismiss, AUTO_HIDE_MS);
+    return ()=>clearTimeout(t);
+  },[entry, hover, onDismiss]);
+  if (!entry) return null;
+  return (
+    <div onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      style={{position:"absolute",left:"50%",bottom:"calc(8vh + 80px)",transform:"translateX(-50%)",
+        background:C.surface,border:`1px solid ${C.borderBrt}`,borderRadius:6,
+        boxShadow:"0 4px 24px rgba(0,0,0,0.5)",zIndex:300,
+        display:"flex",alignItems:"center",gap:S.s4,padding:`${S.s3} ${S.s4}`,
+        maxWidth:"min(560px, 92vw)"}}>
+      <span style={{fontFamily:FB,fontSize:T.sm,color:C.text,flex:1,minWidth:0}}>{entry.description}</span>
+      <button onClick={onUndo} style={{fontFamily:F,fontWeight:800,fontSize:T.sm,letterSpacing:1.5,
+        padding:`${S.s2} ${S.s4}`,border:`1px solid ${C.accent}`,borderRadius:4,
+        background:`${C.accent}22`,color:C.accent,cursor:"pointer",flexShrink:0}}>
+        ↶ UNDO
+      </button>
+      <button onClick={onDismiss} title="Dismiss" style={{background:"none",border:"none",
+        color:C.dim,cursor:"pointer",fontSize:16,padding:0,lineHeight:1,flexShrink:0}}>✕</button>
+    </div>
+  );
+}
+
 export default function Sortie() {
   useEffect(()=>{injectFonts();},[]);
+  const {narrow, mobile}                         = useViewport();
+  const [rosterCollapsed,  setRosterCollapsed]   = useState(false);
+  const [mobileRosterOpen, setMobileRosterOpen]  = useState(false);
+  // Auto-collapse roster on first paint at narrow widths (it can still be expanded).
+  useEffect(()=>{ if(narrow && !mobile) setRosterCollapsed(true); },[narrow,mobile]);
   const [scenarioId,       setScenarioId]       = useState(0);
   const [phaseAssign,      setPhaseAssign]       = useState(()=>JSON.parse(JSON.stringify(BASE_PHASE_ASSIGN)));
   const [phaseComplete,    setPhaseComplete]     = useState(()=>JSON.parse(JSON.stringify(BASE_PHASE_COMPLETE)));
@@ -1365,6 +1621,12 @@ export default function Sortie() {
   const [customFreed,      setCustomFreed]       = useState({});
   const [customEarly,      setCustomEarly]       = useState({});
   const [resetKey,         setResetKey]          = useState(0);
+  // Undo system: stack of undoable actions (LIFO). visibleUndo is just the
+  // currently-shown snackbar entry — set when an action is performed, cleared
+  // when the toast auto-dismisses or the user closes it. The stack itself is
+  // separate so it survives the toast hiding.
+  const [undoStack,        setUndoStack]         = useState([]);
+  const [visibleUndo,      setVisibleUndo]       = useState(null);
   const inputRef = useRef(null);
 
   const baseScenario = SCENARIOS.find(s=>s.id===scenarioId)||SCENARIOS[0];
@@ -1402,6 +1664,8 @@ export default function Sortie() {
     setCmd("");
     setCommitResult(null);
     setHeatmapFilter(null);
+    setUndoStack([]);
+    setVisibleUndo(null);
   },[scenarioId, resetKey]);
 
   const getStatus = id => engineerStatus(id, effectiveScenario, phaseAssign);
@@ -1409,19 +1673,49 @@ export default function Sortie() {
   const deployedCount  = ENGINEERS.filter(i=>getStatus(i.id)==="deployed").length;
   const util           = Math.round((deployedCount/ENGINEERS.length)*100);
 
-  // Mark a phase complete
+  // Mark a phase complete. Pushes the previous state to undoStack so the action
+  // can be reversed via the snackbar or (future) the audit panel. No confirm
+  // dialog — undo is the safety net.
   function markPhaseComplete(projectId, phase) {
     const project = PROJECTS.find(p=>p.id===projectId);
-    const needsConfirm = project.revenue >= 400000;
-    if (needsConfirm && !window.confirm(`Mark ${phase} phase complete for ${project.name} ($${(project.revenue/1000).toFixed(0)}K)? This cannot be undone.`)) return;
-    // Engineers stay assigned (history preserved); marking the phase complete is what advances the project.
+    if (!project) return;
     const freed = phaseAssign[`${projectId}-${phase}`]||[];
+    const prevPhaseComplete = JSON.parse(JSON.stringify(phaseComplete));
     setPhaseComplete(prev=>({...prev,[projectId]:[...(prev[projectId]||[]),phase]}));
     setAuditLog(prev=>[...prev,{
       time:fmtTime(), action:"PHASE COMPLETE", scenario:effectiveScenario.name,
       description:`${phase.toUpperCase()} phase marked complete on ${project.name}. ${freed.map(id=>getEngineer(id)?.name).join(", ")} freed for redeployment.`,
       revenueImpact:0, certValidation:null,
     }]);
+    const undoEntry = {
+      type:"phase_complete",
+      description:`${project.name} · ${phase.toUpperCase()} marked complete`,
+      restore:{ phaseComplete: prevPhaseComplete },
+    };
+    setUndoStack(prev=>[...prev, undoEntry]);
+    setVisibleUndo(undoEntry);
+  }
+
+  // Pop the topmost undoable action and restore the prior state. Logs the
+  // reversal in the audit trail so the history reflects what actually happened.
+  function undoLastAction() {
+    setUndoStack(prev=>{
+      if (prev.length === 0) return prev;
+      const top = prev[prev.length - 1];
+      if (top.type === "phase_complete" && top.restore?.phaseComplete) {
+        setPhaseComplete(top.restore.phaseComplete);
+      }
+      setAuditLog(log=>[...log,{
+        time:fmtTime(), action:"UNDONE", scenario:effectiveScenario.name,
+        description:`Reverted: ${top.description}`,
+        revenueImpact:0, certValidation:null,
+      }]);
+      const next = prev.slice(0, -1);
+      // Update the snackbar to show the next undoable entry (if any) so the
+      // user can keep walking backwards. If the stack is empty, hide it.
+      setVisibleUndo(next.length > 0 ? next[next.length - 1] : null);
+      return next;
+    });
   }
 
   // Commit AI recommendation
@@ -1535,7 +1829,7 @@ LOCATION RULE: Use "currentLocation" not "homeCity" for travel feasibility. An e
 PHASE BLOCKING RULE: Only the current active phase matters for revenue recovery. If a project is blocked in Networking, recommending a Delivery or Installation engineer does not recover revenue.
 
 THREE MODES:
-MODE 1 — EXPLICIT OVERRIDE: Manager names specific engineer and project. Execute it. Validate cert for the active phase. Set isBriefing:false.
+MODE 1 — EXPLICIT OVERRIDE: Manager names specific engineer and project. Execute it. Validate cert for the active phase. Set isBriefing:false. CRITICAL: MODE 1 requires a NAMED engineer in the query — a first name ("Ravi"), last name ("Patel"), full name ("Ravi Patel"), or engineer ID ("NET07"). Generic words like "somebody", "anyone", "an engineer", "the best person" are NOT named engineers. If the query uses a command verb (reallocate, move, assign, send) but does NOT name a specific engineer, treat it as MODE 2 — the manager is asking YOU to pick, not commanding a known person.
 MODE 2 — AI OPTIMIZATION: Match cert to active phase. Prefer available/freed engineers; recommend the highest-revenue at-risk project they can cover. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. The reassignment is immediate; do NOT reason about waiting for the source project to finish first. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue); ignore travel distance as a tiebreaker unless two swaps yield equal revenue recovery. CRITICAL: For MODE 2, proposedChange MUST be populated (never null) whenever any engineer in deployedEngineers holds the required cert — even if all candidates are currently deployed. Only return proposedChange:null if literally zero engineers in the entire roster have the required cert. Set isBriefing:false.
 MODE 3 — BRIEFING: "exposure", "status", "what's at risk", "who's available", "briefing". Set isBriefing:true, proposedChange:null. Each briefingItem is a CONCRETE FINDING about the current state — NOT a category label or section header. The "title" IS the finding in 3-8 words. The "detail" is one full sentence with specifics — project IDs (P##), dollar amounts, engineer names, or city names pulled from CURRENT STATE. Severity goes in the severity field, never in the title text. Aim for 3-6 items ordered by revenue impact.
 
@@ -1583,16 +1877,17 @@ Respond ONLY with valid JSON, no markdown:
 
   return (
     <div style={{fontFamily:FB,background:C.bg,color:C.text,height:"100vh",
-      display:"flex",flexDirection:"column",overflow:"hidden",position:"relative"}}>
+      display:"flex",flexDirection:"column",overflow:"hidden",position:"relative",
+      maxWidth:1800,margin:"0 auto",borderLeft:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`}}>
       <Header scenarioId={scenarioId} atRisk={totalAtRisk} util={util}
         deployed={deployedCount} demoOpen={demoOpen} setDemoOpen={setDemoOpen}/>
 
       {/* View toggle */}
       <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,
-        padding:"5px 18px",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+        padding:`${S.s2} ${S.s5}`,display:"flex",alignItems:"center",gap:S.s2,flexShrink:0,flexWrap:"wrap"}}>
         {[{id:"board",l:"⊞ Project Board"},{id:"heatmap",l:"◉ Coverage Matrix"}].map(v=>(
           <button key={v.id} onClick={()=>setMainView(v.id)}
-            style={{fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1.5,padding:"3px 11px",
+            style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:1.5,padding:`${S.s2} ${S.s4}`,
               borderRadius:4,border:`1px solid ${mainView===v.id?C.accent:C.border}`,
               background:mainView===v.id?`${C.accent}22`:"transparent",
               color:mainView===v.id?C.accent:C.dim,cursor:"pointer"}}>
@@ -1601,7 +1896,7 @@ Respond ONLY with valid JSON, no markdown:
         ))}
         {/* Scenario builder button */}
         <button onClick={()=>setBuilderOpen(v=>!v)}
-          style={{fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1.5,padding:"3px 11px",
+          style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:1.5,padding:`${S.s2} ${S.s4}`,
             borderRadius:4,border:`1px solid ${builderOpen||hasCustom?C.accent:C.border}`,
             background:builderOpen||hasCustom?`${C.accent}22`:"transparent",
             color:builderOpen||hasCustom?C.accent:C.dim,cursor:"pointer"}}>
@@ -1610,13 +1905,13 @@ Respond ONLY with valid JSON, no markdown:
         <div style={{flex:1}}/>
         {/* Export button */}
         <button onClick={()=>setExportOpen(true)}
-          style={{fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1.5,padding:"3px 11px",
+          style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:1.5,padding:`${S.s2} ${S.s4}`,
             borderRadius:4,border:`1px solid ${C.border}`,
             background:"transparent",color:C.dim,cursor:"pointer"}}>
           ↗ EXPORT REPORT
         </button>
         <button onClick={()=>setAuditOpen(true)}
-          style={{fontFamily:F,fontSize:10,fontWeight:700,letterSpacing:1.5,padding:"3px 11px",
+          style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:1.5,padding:`${S.s2} ${S.s4}`,
             borderRadius:4,border:`1px solid ${auditLog.length>0?C.teal:C.border}`,
             background:auditLog.length>0?`${C.teal}18`:"transparent",
             color:auditLog.length>0?C.teal:C.dim,cursor:"pointer"}}>
@@ -1627,7 +1922,9 @@ Respond ONLY with valid JSON, no markdown:
       {demoOpen&&<DemoPanel scenarioId={scenarioId} setScenarioId={id=>{setScenarioId(id);setCustomDisruptions({});setCustomFreed({});setCustomEarly({});setDemoOpen(false);}} onClose={()=>setDemoOpen(false)}/>}
 
       <div style={{display:"flex",flex:1,overflow:"hidden",position:"relative"}}>
-        <Roster engineers={ENGINEERS} scenario={effectiveScenario} phaseAssign={phaseAssign} phaseComplete={phaseComplete}/>
+        <Roster engineers={ENGINEERS} scenario={effectiveScenario} phaseAssign={phaseAssign} phaseComplete={phaseComplete}
+          collapsed={rosterCollapsed} onToggleCollapse={()=>setRosterCollapsed(v=>!v)}
+          mobile={mobile} mobileOpen={mobileRosterOpen} onMobileClose={()=>setMobileRosterOpen(false)}/>
         {mainView==="heatmap"?(
           <RiskHeatmap projects={activeProjects} phaseAssign={phaseAssign}
             phaseComplete={phaseComplete} scenario={effectiveScenario}
@@ -1635,7 +1932,7 @@ Respond ONLY with valid JSON, no markdown:
         ):(
           <ProjectBoard projects={activeProjects} phaseAssign={phaseAssign}
             phaseComplete={phaseComplete} onMarkComplete={markPhaseComplete}
-            heatmapFilter={heatmapFilter} onClearFilter={()=>setHeatmapFilter(null)}/>
+            heatmapFilter={heatmapFilter} onClearFilter={()=>setHeatmapFilter(null)} narrow={narrow}/>
         )}
         {/* Scenario builder panel (slide in from right) */}
         {builderOpen&&(
@@ -1675,12 +1972,14 @@ Respond ONLY with valid JSON, no markdown:
         )}
       </div>
 
-      <CommandBar cmd={cmd} setCmd={setCmd} runCmd={runCmd} loading={loading} inputRef={inputRef}/>
+      <CommandBar cmd={cmd} setCmd={setCmd} runCmd={runCmd} loading={loading} inputRef={inputRef}
+        mobile={mobile} onOpenRoster={()=>setMobileRosterOpen(true)}/>
 
       {preview&&<PreviewPanel preview={preview} onCommit={commitChange} onCancel={dismissPreview}
         phaseAssign={phaseAssign} phaseComplete={phaseComplete}/>}
       {commitResult&&<BeforeAfterPanel result={commitResult} onClose={()=>setCommitResult(null)}/>}
       {auditOpen&&<AuditPanel log={auditLog} onClose={()=>setAuditOpen(false)}/>}
+      <UndoSnackbar entry={visibleUndo} onUndo={undoLastAction} onDismiss={()=>setVisibleUndo(null)}/>
       {exportOpen&&<ExportModal
         scenarioName={effectiveScenario.name}
         customActive={hasCustom}
