@@ -3,6 +3,15 @@ const ipHits = new Map();
 const WINDOW_MS     = 60_000; // 1 minute
 const MAX_PER_WINDOW = 20;    // 20 requests per IP per minute
 
+// Vercel function config: extend the default 10s timeout. Hypothetical-reasoning
+// queries with the expanded system prompt (region/airport mapping, mode routing,
+// briefingItem examples) can push Haiku 4.5 past 10s on cold starts and complex
+// asks like "ORD is closed for 3 days — reallocate the team". 30s is well within
+// Hobby tier limits and well above observed worst-case latency.
+export const config = {
+  maxDuration: 30,
+};
+
 function isRateLimited(ip) {
   const now = Date.now();
   const entry = ipHits.get(ip) || { count: 0, windowStart: now };
