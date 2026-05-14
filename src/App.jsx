@@ -245,7 +245,10 @@ const BASELINE_SCENARIO = {
 };
 
 // ── HELPERS ────────────────────────────────────────────────────────────────
-const fmtRev  = n => n>=1e6?`$${(n/1e6).toFixed(2)}M`:`$${(n/1000).toFixed(0)}K`;
+const fmtRev  = n => {
+  if (n < 0) return `-${fmtRev(-n)}`;
+  return n>=1e6?`$${(n/1e6).toFixed(2)}M`:`$${(n/1000).toFixed(0)}K`;
+};
 const urgClr  = d => d<=5?C.red:d<=12?C.amber:C.green;
 const fmtTime = () => new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
 const getEngineer  = id => ENGINEERS.find(i=>i.id===id);
@@ -354,6 +357,8 @@ function getTravelBand(fromCity, toCity) {
 const DISRUPTION_KEYWORDS = ["storm","snowstorm","thunderstorm","blizzard","hurricane","tornado","snow","weather","sick","pto","vacation","delay","delayed","pushed","closed","outage","freeze","quit","emergency","stuck","grounded","flight","absent","unavailable","unable","leave","leaving","ooo"];
 const URGENCY_KEYWORDS = ["soonest","urgent","urgency","deadline","deadlines","fastest","quickest","immediate","critical-path","time-sensitive","earliest","priority"];
 const UTILIZATION_KEYWORDS = ["utilization","utilize","utilized","capacity","headcount","bench","idle"];
+const ACTION_KEYWORDS_WORD = ["reallocate","reassign","rebalance","optimize","minimize","reduce","fix","cover","coverage","covered","replan","recover","allocate","ensure","deploy","redeploy","move","send","assign"];
+const ACTION_PHRASES = ["make sure","take care of"];
 
 function commandImpliesDisruption(cmd) {
   const lower = (cmd||"").toLowerCase();
@@ -368,6 +373,21 @@ function commandImpliesUrgency(cmd) {
 function commandImpliesUtilization(cmd) {
   const lower = (cmd||"").toLowerCase();
   return UTILIZATION_KEYWORDS.some(kw => new RegExp(`\\b${kw}\\b`).test(lower));
+}
+
+// Detects ACTION INTENT in the command. Used to override Haiku's MODE 3
+// (briefing) classification when the user clearly expressed action intent
+// but Haiku interpreted as diagnostic. "Make sure Capital One has coverage"
+// is a directive even though Haiku may parse it as a status query.
+function commandImpliesAction(cmd) {
+  const lower = (cmd||"").toLowerCase();
+  for (const w of ACTION_KEYWORDS_WORD) {
+    if (new RegExp(`\\b${w}\\b`).test(lower)) return true;
+  }
+  for (const p of ACTION_PHRASES) {
+    if (lower.includes(p)) return true;
+  }
+  return false;
 }
 
 // Returns array of project IDs that the cmd appears to target (by project ID,
@@ -515,6 +535,16 @@ function synthesizeRecommendation(change, phaseAssign, mode) {
       : `covers most urgent at-risk gap, accepts ${fmtRev(-netGain)} marginal exposure`;
     return `Reassign ${engineer.name} (${engineer.id}) ${sourceText} to ${project.name} (${fmtRev(project.revenue)} at-risk, only ${project.daysLeft} days to deadline) — ${cert} match, ${travel.label.toLowerCase()}, ${closingText}.`;
   }
+  // Constrained-mode prose frames the choice as honoring the user's named
+  // target. Matches the analysis paragraph's framing for narrative consistency.
+  if (mode === 'constrained') {
+    const closingText = netGain > 0
+      ? `net gain ${fmtRev(netGain)} recovered`
+      : netGain === 0
+        ? "revenue-neutral swap"
+        : `covers named target with ${fmtRev(-netGain)} marginal exposure`;
+    return `Reassign ${engineer.name} (${engineer.id}) ${sourceText} to ${project.name} (${fmtRev(project.revenue)} at-risk) — ${cert} match, ${travel.label.toLowerCase()}, ${closingText}.`;
+  }
   // Revenue-mode default
   const gainText = netGain > 0
     ? `net gain ${fmtRev(netGain)} recovered`
@@ -563,6 +593,14 @@ function validateAIResponse(parsed, phaseComplete) {
   const activePhase = phase || getCurrentPhase(projectId, phaseComplete||{});
   if (!project) return { ok:false, parsed:{...parsed,proposedChange:null,recommendation:`Unknown project: ${projectId}`}};
   if (!engineer)     return { ok:false, parsed:{...parsed,proposedChange:null,recommendation:`Unknown engineer: ${newEngineerId}`}};
+  // Guard against Haiku occasionally proposing a phase that's already complete.
+  // Assigning to a done phase is a no-op for revenue recovery — the optimizer
+  // wouldn't produce one but Haiku might. Reject with a clear message rather
+  // than letting the commit silently waste an engineer.
+  const completedPhases = (phaseComplete||{})[projectId] || [];
+  if (completedPhases.includes(activePhase)) {
+    return { ok:false, parsed:{...parsed,proposedChange:null,recommendation:`${activePhase.toUpperCase()} phase already complete on ${project.name} — propose the active phase instead.`}};
+  }
   const reqCert = project.phaseCerts[activePhase];
   const certOk  = engineer.certs.includes(reqCert);
   parsed.certMatch   = certOk;
@@ -1148,17 +1186,27 @@ function RiskHeatmap({projects, phaseAssign, phaseComplete, scenario, onCellClic
 
 function BeforeAfterPanel({result, onClose}) {
   const delta = result.before - result.after;
+  // Delta sign drives the label. Positive: pure revenue win. Zero: neutral.
+  // Negative: a deadline-prioritized or constrained swap that knowingly accepts
+  // marginal exposure to cover a named or urgent target. Honest framing matters
+  // here — a green "$-20K RECOVERED" reads as a bug; "$20K EXPOSED" reads as
+  // intent.
+  const deltaLabel = delta > 0 ? `${fmtRev(delta)} RECOVERED`
+                    : delta === 0 ? "REVENUE-NEUTRAL"
+                    : `${fmtRev(-delta)} EXPOSED`;
+  const deltaColor = delta > 0 ? C.green : delta === 0 ? C.amber : C.amber;
+  const arrowColor = delta >= 0 ? C.green : C.amber;
   return (
     <div style={{position:"absolute",inset:0,background:"rgba(4,8,18,0.88)",display:"flex",
       alignItems:"center",justifyContent:"center",zIndex:100}}>
-      <div style={{background:C.card,border:`1px solid ${C.green}88`,borderRadius:8,
+      <div style={{background:C.card,border:`1px solid ${deltaColor}88`,borderRadius:8,
         width:"min(500px, 92vw)",maxHeight:"min(85vh, 700px)",padding:S.s5,display:"flex",flexDirection:"column",gap:S.s4}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{fontFamily:F,fontSize:14,fontWeight:700,letterSpacing:2,color:C.green}}>CHANGE COMMITTED</div>
+          <div style={{fontFamily:F,fontSize:14,fontWeight:700,letterSpacing:2,color:deltaColor}}>CHANGE COMMITTED</div>
           <button onClick={onClose} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:18}}>✕</button>
         </div>
         <div style={{fontFamily:FB,fontSize:13,color:C.white,lineHeight:1.5}}>
-          <strong style={{color:C.green}}>{result.engineerName}</strong> assigned to <strong style={{color:C.white}}>{result.projectName}</strong> ({result.phase} phase)
+          <strong style={{color:deltaColor}}>{result.engineerName}</strong> assigned to <strong style={{color:C.white}}>{result.projectName}</strong> ({result.phase} phase)
         </div>
         {/* Before / After */}
         <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:8,alignItems:"center"}}>
@@ -1168,9 +1216,9 @@ function BeforeAfterPanel({result, onClose}) {
             <div style={{fontFamily:F,fontSize:9,color:C.dim,marginTop:2}}>AT RISK</div>
           </div>
           <div style={{textAlign:"center"}}>
-            <div style={{fontFamily:FM,fontSize:18,color:C.green}}>→</div>
-            <div style={{fontFamily:F,fontSize:9,color:C.green,fontWeight:700,marginTop:2}}>
-              {fmtRev(delta)} RECOVERED
+            <div style={{fontFamily:FM,fontSize:18,color:arrowColor}}>→</div>
+            <div style={{fontFamily:F,fontSize:9,color:deltaColor,fontWeight:700,marginTop:2}}>
+              {deltaLabel}
             </div>
           </div>
           <div style={{background:C.surface,border:`1px solid ${C.green}44`,borderRadius:6,padding:"10px 14px",textAlign:"center"}}>
@@ -1228,6 +1276,7 @@ function AuditPanel({log, onClose}) {
                         color:ac,background:`${ac}18`,padding:"1px 6px",borderRadius:3}}>{e.action}</span>
                       {e.scenario&&<span style={{fontFamily:F,fontSize:9,color:C.dim}}>[{e.scenario}]</span>}
                       {e.revenueImpact>0&&<span style={{fontFamily:FM,fontSize:10,color:C.green,marginLeft:"auto"}}>+{fmtRev(e.revenueImpact)}</span>}
+                      {e.revenueImpact<0&&<span style={{fontFamily:FM,fontSize:10,color:C.amber,marginLeft:"auto"}}>{fmtRev(e.revenueImpact)}</span>}
                     </div>
                     <div style={{fontFamily:FB,fontSize:11,color:C.white,lineHeight:1.4}}>{e.description}</div>
                     {e.certValidation&&<div style={{fontFamily:F,fontSize:9,color:C.green,marginTop:3}}>✓ {e.certValidation}</div>}
@@ -1405,25 +1454,9 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
   );
 }
 
-const QUICK_CMDS = [
-  {label:"Snowstorm closed Chicago O'Hare — what's the impact?",icon:"❄️"},
-  {label:"Megan called in sick — who can cover?",icon:"🤒"},
-  {label:"What's my exposure right now?",icon:"📊"},
-];
-
 function CommandBar({cmd,setCmd,runCmd,loading,inputRef,onOpenRoster,mobile}) {
   return (
     <div style={{background:C.surface,borderTop:`1px solid ${C.borderBrt}`,flexShrink:0}}>
-      <div style={{padding:`${S.s2} ${S.s5} 0`,display:"flex",gap:S.s2,alignItems:"center",flexWrap:"wrap"}}>
-        <span style={{fontFamily:F,fontSize:T.xxs,fontWeight:700,letterSpacing:2,color:C.dim,flexShrink:0}}>QUICK:</span>
-        {QUICK_CMDS.map(q=>(
-          <button key={q.label} onClick={()=>setCmd(q.label)}
-            style={{fontFamily:FB,fontSize:T.sm,padding:`${S.s1} ${S.s3}`,border:`1px solid ${C.border}`,
-              borderRadius:12,cursor:"pointer",background:"transparent",color:C.dim,whiteSpace:"nowrap"}}>
-            {q.icon} {q.label}
-          </button>
-        ))}
-      </div>
       <div style={{padding:`${S.s3} ${S.s5} ${S.s4}`,display:"flex",gap:S.s4,alignItems:"center"}}>
         {mobile&&onOpenRoster&&(
           <button onClick={onOpenRoster} title="Open roster" style={{background:C.card,border:`1px solid ${C.border}`,
@@ -1436,7 +1469,7 @@ function CommandBar({cmd,setCmd,runCmd,loading,inputRef,onOpenRoster,mobile}) {
         <div style={{width:1,height:30,background:C.border,flexShrink:0}}/>
         <input ref={inputRef} value={cmd} onChange={e=>setCmd(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();runCmd();}}}
-          placeholder="Describe a disruption or ask a question — e.g. 'Snowstorm closed ORD, replan' · 'Kaiser site delayed, who can I redeploy?' · 'What's my exposure?'"
+          placeholder="Describe a disruption or ask a question"
           style={{flex:1,minWidth:0,background:C.card,border:`1px solid ${C.borderBrt}`,borderRadius:5,
             padding:`${S.s3} ${S.s4}`,fontSize:T.base,outline:"none",lineHeight:1.4,color:C.white,fontFamily:FB}}/>
         <button onClick={runCmd} disabled={loading||!cmd.trim()}
@@ -1477,7 +1510,7 @@ function ExportModal({totalAtRisk, util, deployed,
     ``,
     `REVENUE SNAPSHOT`,
     `  At Risk:      ${fmtRev(totalAtRisk)}`,
-    `  Recovered:    ${fmtRev(recovered)} (${commits.length} commit${commits.length!==1?"s":""})`,
+    `  Net Impact:   ${recovered>=0?fmtRev(recovered)+' recovered':fmtRev(-recovered)+' exposed'} (${commits.length} commit${commits.length!==1?"s":""})`,
     `  Utilization:  ${util}% (${deployed}/26 deployed)`,
     ``,
     `SESSION ACTIONS (${auditLog.length} total)`,
@@ -1520,7 +1553,7 @@ function ExportModal({totalAtRisk, util, deployed,
         <div style={{padding:"10px 20px",borderTop:`1px solid ${C.border}`,
           display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <span style={{fontFamily:F,fontSize:9,color:C.dim,letterSpacing:1}}>
-            {auditLog.length} ACTIONS · {commits.length} COMMITTED · {fmtRev(recovered)} RECOVERED
+            {auditLog.length} ACTIONS · {commits.length} COMMITTED · {recovered>=0?fmtRev(recovered)+' RECOVERED':fmtRev(-recovered)+' EXPOSED'}
           </span>
           <div style={{display:"flex",gap:8}}>
             <button onClick={onClose}
@@ -1647,6 +1680,11 @@ export default function Sortie() {
       if (top.type === "phase_complete" && top.restore?.phaseComplete) {
         setPhaseComplete(top.restore.phaseComplete);
       }
+      if (top.type === "commit_change" && top.restore?.phaseAssign) {
+        setPhaseAssign(top.restore.phaseAssign);
+        // Clear the post-commit Before/After panel since the commit is undone
+        setCommitResult(null);
+      }
       setAuditLog(log=>[...log,{
         time:fmtTime(), action:"UNDONE",
         description:`Reverted: ${top.description}`,
@@ -1670,6 +1708,8 @@ export default function Sortie() {
     if (!project||!engineer) { setPreview(null); setCmd(""); return; }
     const reqCert = project.phaseCerts[phase];
     if (!engineer.certs.includes(reqCert)) { setPreview(null); setCmd(""); return; }
+    // Capture pre-commit state for undo
+    const prevPhaseAssign = JSON.parse(JSON.stringify(phaseAssign));
     // Compute before
     const beforeRisk = calcRevAtRisk(activeProjects, phaseAssign, phaseComplete);
     // Build next state
@@ -1691,9 +1731,24 @@ export default function Sortie() {
     });
     setAuditLog(prev=>[...prev,{
       time:fmtTime(), action:"COMMITTED",
-      description:`${engineer.name} → ${project.name} (${phase} phase). ${fmtRev(beforeRisk-afterRisk)} recovered.`,
+      description:`${engineer.name} → ${project.name} (${phase} phase). ${(()=>{
+        const delta = beforeRisk-afterRisk;
+        if (delta > 0) return `${fmtRev(delta)} recovered.`;
+        if (delta === 0) return `Revenue-neutral.`;
+        return `${fmtRev(-delta)} marginal exposure accepted.`;
+      })()}`,
       revenueImpact:beforeRisk-afterRisk, certValidation:`${engineer.name}: ${reqCert} ✓`,
     }]);
+    // Push undo entry — managers can revert a commit via the snackbar within
+    // ~10s, or via the audit panel later. The handoff doctrine ("undo > confirm")
+    // depends on this entry being recorded for every state-changing action.
+    const undoEntry = {
+      type:"commit_change",
+      description:`${engineer.name} → ${project.name} (${phase.toUpperCase()})`,
+      restore:{ phaseAssign: prevPhaseAssign },
+    };
+    setUndoStack(prev=>[...prev, undoEntry]);
+    setVisibleUndo(undoEntry);
     setPreview(null); setCmd("");
   }
 
@@ -1782,7 +1837,7 @@ Always include the hypothetical's impact in the analysis field — name the affe
 THREE MODES:
 MODE 1 — EXPLICIT OVERRIDE: Manager names BOTH a specific engineer AND a specific destination project. Execute it. Validate cert for the active phase. Set isBriefing:false. CRITICAL: MODE 1 requires a NAMED engineer in the query — a first name ("Ravi"), last name ("Patel"), full name ("Ravi Patel"), or engineer ID ("NET07"). Generic words like "somebody", "anyone", "an engineer", "the best person" are NOT named engineers. If the query uses a command verb (reallocate, move, assign, send) but does NOT name a specific engineer, treat it as MODE 2 — the manager is asking YOU to pick, not commanding a known person.
 
-MODE 2 — AI OPTIMIZATION: Manager asks YOU to recover, reassign, reallocate, rebalance, optimize, fix, cover, replan, or minimize/reduce risk or exposure. These are ACTION requests — return a populated proposedChange and set isBriefing:false. Even broad asks like "reallocate teams to minimize revenue at risk" or "optimize coverage" are MODE 2: pick the single highest-impact swap and propose it. Match cert to active phase. Prefer available/freed engineers (and engineers freed by hypothetical site delays); recommend the highest-revenue at-risk project they can cover. EXCLUDE any engineers the hypothetical marks as unavailable. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue). CRITICAL: For MODE 2, proposedChange MUST be populated whenever any cert-qualified engineer in the roster (deployed OR available, minus those the hypothetical disrupted) exists. Only return proposedChange:null if literally zero qualified engineers remain. Set isBriefing:false.
+MODE 2 — AI OPTIMIZATION: Manager asks YOU to recover, reassign, reallocate, rebalance, optimize, fix, cover, replan, allocate, ensure coverage, make sure something is covered, or minimize/reduce risk or exposure. These are ACTION requests — return a populated proposedChange and set isBriefing:false. Phrases like "make sure X has coverage", "make sure all projects are covered", "ensure Capital One is staffed", "allocate coverage to Intermountain", "cover P23" are MODE 2 — they ask YOU to act, not to describe. Even broad asks like "reallocate teams to minimize revenue at risk" or "optimize coverage" are MODE 2: pick the single highest-impact swap and propose it. Match cert to active phase. Prefer available/freed engineers (and engineers freed by hypothetical site delays); recommend the highest-revenue at-risk project they can cover. EXCLUDE any engineers the hypothetical marks as unavailable. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue). CRITICAL: For MODE 2, proposedChange MUST be populated whenever any cert-qualified engineer in the roster (deployed OR available, minus those the hypothetical disrupted) exists. Only return proposedChange:null if literally zero qualified engineers remain. Set isBriefing:false.
 
 TERSE OUTPUT — MODE 2 (STRICT): The "recommendation" field is ONE sentence stating the FINAL chosen action — the swap you are proposing, not the swaps you considered. The "analysis" field is ONE sentence describing the picture. FORBIDDEN phrases in "recommendation": "Instead:", "ALTERNATIVE:", "This does NOT match", "No match", "cert mismatch blocks", "No single swap covers", "blocks this move", "Reassign X... cert mismatch...". If you catch yourself writing any of these, STOP — you are narrating reasoning that belongs in your head, not in the output. Rewrite the sentence to state ONLY the final chosen swap.
 
@@ -1875,6 +1930,23 @@ Respond ONLY with valid JSON, no markdown:
       let finalParsed = validated;
       let recoMode = 'revenue';
       let isManagerOverride = false;
+
+      // BRIEFING-CLASSIFICATION OVERRIDE: Haiku occasionally misclassifies
+      // action requests as briefings — e.g. "Make sure Capital One has
+      // coverage" sounds diagnostic to it. If the cmd clearly expresses
+      // action intent (action verb or directive phrase) AND no disruption
+      // or utilization framing is in play, force MODE 2 by overriding
+      // isBriefing. The existing routing chain below then runs normally
+      // and produces a proper recommendation.
+      if (finalParsed?.isBriefing === true) {
+        const hasAction = commandImpliesAction(cmd);
+        const hasDisruptionForBriefingCheck = commandImpliesDisruption(cmd);
+        const hasUtilizationForBriefingCheck = commandImpliesUtilization(cmd);
+        if (hasAction && !hasDisruptionForBriefingCheck && !hasUtilizationForBriefingCheck) {
+          finalParsed = { ...finalParsed, isBriefing: false };
+        }
+      }
+
       if (finalParsed && finalParsed.isBriefing !== true) {
         const haikuSwap = finalParsed.proposedChange;
         let haikuNetGain = -Infinity;
