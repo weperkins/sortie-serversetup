@@ -1047,7 +1047,7 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
         width:isBriefing?"min(620px, 92vw)":"min(580px, 92vw)",maxHeight:"min(85vh, 800px)",overflowY:"auto",
         padding:S.s5,display:"flex",flexDirection:"column",gap:S.s4}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{fontFamily:F,fontSize:13,fontWeight:700,letterSpacing:2,
+          <div style={{fontFamily:F,fontSize:T.md,fontWeight:700,letterSpacing:2,
             color:isBriefing?C.teal:C.accent}}>{isBriefing?"SITUATION BRIEFING":"SORTIE RECOMMENDATION"}</div>
           <button onClick={onCancel} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:18}}>✕</button>
         </div>
@@ -1055,21 +1055,21 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
           <div style={{color:C.red,fontFamily:FB,fontSize:13}}>{preview.error}</div>
         ):isBriefing?(
           <>
-            <div><div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:5}}>ANALYSIS</div>
-              <div style={{fontFamily:FB,fontSize:13,color:C.text,lineHeight:1.6}}>{d?.analysis}</div></div>
+            <div><div style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:S.s2}}>ANALYSIS</div>
+              <div style={{fontFamily:FB,fontSize:T.md,color:C.text,lineHeight:1.6}}>{d?.analysis}</div></div>
             {(()=>{
               const valid=(d?.briefingItems||[]).filter(it=>it&&it.title&&it.detail&&String(it.detail).trim().length>0);
               return valid.length>0&&(
-              <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                <div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:2}}>CRITICAL ITEMS</div>
+              <div style={{display:"flex",flexDirection:"column",gap:S.s2}}>
+                <div style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:S.s1}}>CRITICAL ITEMS</div>
                 {valid.map((item,i)=>{
                   const sev=String(item.severity||"info").toLowerCase();
                   const sc=sev==="critical"?C.red:sev==="warning"?C.amber:C.accent;
                   return (
-                    <div key={i} style={{display:"flex",gap:8,padding:"6px 10px",background:`${sc}10`,border:`1px solid ${sc}44`,borderRadius:4}}>
-                      <span style={{flexShrink:0,fontSize:12}}>{sev==="critical"?"🔴":sev==="warning"?"🟡":"🔵"}</span>
-                      <div><div style={{fontFamily:F,fontSize:11,fontWeight:700,color:sc}}>{item.title}</div>
-                        <div style={{fontFamily:FB,fontSize:10,color:C.text,lineHeight:1.4,marginTop:1}}>{item.detail}</div></div>
+                    <div key={i} style={{display:"flex",gap:S.s3,padding:`${S.s2} ${S.s3}`,background:`${sc}10`,border:`1px solid ${sc}44`,borderRadius:4}}>
+                      <span style={{flexShrink:0,fontSize:T.md}}>{sev==="critical"?"🔴":sev==="warning"?"🟡":"🔵"}</span>
+                      <div><div style={{fontFamily:F,fontSize:T.base,fontWeight:700,color:sc}}>{item.title}</div>
+                        <div style={{fontFamily:FB,fontSize:T.sm,color:C.text,lineHeight:1.5,marginTop:S.s1}}>{item.detail}</div></div>
                     </div>
                   );
                 })}
@@ -1077,11 +1077,11 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
               );
             })()}
             {d?.recommendation&&<div>
-              <div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:4}}>RECOMMENDED NEXT STEP</div>
-              <div style={{fontFamily:FB,fontSize:13,color:C.white,lineHeight:1.5}}>{d.recommendation}</div>
+              <div style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:S.s2}}>RECOMMENDED NEXT STEP</div>
+              <div style={{fontFamily:FB,fontSize:T.md,color:C.white,lineHeight:1.5}}>{d.recommendation}</div>
             </div>}
             <div style={{display:"flex",justifyContent:"flex-end"}}>
-              <button onClick={onCancel} style={{fontFamily:F,fontWeight:700,fontSize:11,letterSpacing:1.5,
+              <button onClick={onCancel} style={{fontFamily:F,fontWeight:700,fontSize:T.sm,letterSpacing:1.5,
                 padding:"7px 16px",border:`1px solid ${C.border}`,borderRadius:4,background:"transparent",color:C.dim,cursor:"pointer"}}>CLOSE</button>
             </div>
           </>
@@ -1108,10 +1108,10 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
           }
           return (
           <>
-            {hasAnalysis&&<div><div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:4}}>ANALYSIS</div>
-              <div style={{fontFamily:FB,fontSize:13,color:C.text,lineHeight:1.5}}>{d.analysis}</div></div>}
-            {hasRecText&&<div><div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:4}}>RECOMMENDATION</div>
-              <div style={{fontFamily:FB,fontSize:13,color:C.white,lineHeight:1.5}}>{d.recommendation}</div></div>}
+            {hasAnalysis&&<div><div style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:S.s2}}>ANALYSIS</div>
+              <div style={{fontFamily:FB,fontSize:T.md,color:C.text,lineHeight:1.5}}>{d.analysis}</div></div>}
+            {hasRecText&&<div><div style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:S.s2}}>RECOMMENDATION</div>
+              <div style={{fontFamily:FB,fontSize:T.md,color:C.white,lineHeight:1.5}}>{d.recommendation}</div></div>}
             {change&&toProj&&toIse&&(
               <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:13}}>
                 <div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:9}}>PROPOSED CHANGE</div>
@@ -1169,11 +1169,11 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
             )}
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <button onClick={onCancel}
-                style={{fontFamily:F,fontWeight:700,fontSize:11,letterSpacing:1.5,padding:"7px 16px",
+                style={{fontFamily:F,fontWeight:700,fontSize:T.sm,letterSpacing:1.5,padding:"7px 16px",
                   border:`1px solid ${C.border}`,borderRadius:4,background:"transparent",color:C.dim,cursor:"pointer"}}>DISMISS</button>
               {change&&!preview.error&&(
                 <button onClick={onCommit}
-                  style={{fontFamily:F,fontWeight:700,fontSize:11,letterSpacing:1.5,padding:"7px 16px",
+                  style={{fontFamily:F,fontWeight:700,fontSize:T.sm,letterSpacing:1.5,padding:"7px 16px",
                     border:"none",borderRadius:4,background:C.green,color:"#001A0A",cursor:"pointer"}}>COMMIT CHANGE</button>
               )}
             </div>
@@ -1562,9 +1562,9 @@ Always include the hypothetical's impact in the analysis field — name the affe
 THREE MODES:
 MODE 1 — EXPLICIT OVERRIDE: Manager names BOTH a specific engineer AND a specific destination project. Execute it. Validate cert for the active phase. Set isBriefing:false. CRITICAL: MODE 1 requires a NAMED engineer in the query — a first name ("Ravi"), last name ("Patel"), full name ("Ravi Patel"), or engineer ID ("NET07"). Generic words like "somebody", "anyone", "an engineer", "the best person" are NOT named engineers. If the query uses a command verb (reallocate, move, assign, send) but does NOT name a specific engineer, treat it as MODE 2 — the manager is asking YOU to pick, not commanding a known person.
 
-MODE 2 — AI OPTIMIZATION: Manager asks YOU to recover, reassign, fix, cover, or replan. Match cert to active phase. Prefer available/freed engineers (and engineers freed by hypothetical site delays); recommend the highest-revenue at-risk project they can cover. EXCLUDE any engineers the hypothetical marks as unavailable. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue). CRITICAL: For MODE 2, proposedChange MUST be populated whenever any cert-qualified engineer in the roster (deployed OR available, minus those the hypothetical disrupted) exists. Only return proposedChange:null if literally zero qualified engineers remain. Set isBriefing:false.
+MODE 2 — AI OPTIMIZATION: Manager asks YOU to recover, reassign, reallocate, rebalance, optimize, fix, cover, replan, or minimize/reduce risk or exposure. These are ACTION requests — return a populated proposedChange and set isBriefing:false. Even broad asks like "reallocate teams to minimize revenue at risk" or "optimize coverage" are MODE 2: pick the single highest-impact swap and propose it. Match cert to active phase. Prefer available/freed engineers (and engineers freed by hypothetical site delays); recommend the highest-revenue at-risk project they can cover. EXCLUDE any engineers the hypothetical marks as unavailable. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue). CRITICAL: For MODE 2, proposedChange MUST be populated whenever any cert-qualified engineer in the roster (deployed OR available, minus those the hypothetical disrupted) exists. Only return proposedChange:null if literally zero qualified engineers remain. Set isBriefing:false.
 
-MODE 3 — BRIEFING: "exposure", "status", "what's at risk", "who's available", "briefing", or a hypothetical with no action verb ("what happens if Megan is out?"). Set isBriefing:true, proposedChange:null. Each briefingItem is a CONCRETE FINDING — NOT a category label. The "title" IS the finding in 3-8 words. The "detail" is one full sentence with specifics — project IDs (P##), dollar amounts, engineer names, city names — pulled from CURRENT STATE and from the hypothetical the user described. Severity goes in the severity field, never in the title text. Aim for 3-6 items ordered by revenue impact.
+MODE 3 — BRIEFING: Diagnostic-only questions: "what's my exposure", "what's the status", "who's at risk", "who's available", "give me a briefing", or a hypothetical with no action verb ("what happens if Megan is out?"). MODE 3 is for understanding the picture, NOT for taking action. If the query contains an action verb (reallocate, optimize, rebalance, minimize, reduce, fix, cover, replan, recover, reassign), route to MODE 2 even if it also mentions "risk" or "exposure" — the manager wants a proposed move, not a diagnosis. Set isBriefing:true, proposedChange:null. Each briefingItem is a CONCRETE FINDING — NOT a category label. The "title" IS the finding in 3-8 words. The "detail" is one full sentence with specifics — project IDs (P##), dollar amounts, engineer names, city names — pulled from CURRENT STATE and from the hypothetical the user described. Severity goes in the severity field, never in the title text. Aim for 3-6 items ordered by revenue impact.
 
 GOOD briefingItems (do this — title is the finding, detail has specifics, severity is set):
 { "severity":"critical", "title":"6 networking projects blocked", "detail":"P16, P18, P19, P20, P23, P25 are stalled in networking phase totaling $2.36M in queued revenue." }
@@ -1579,7 +1579,7 @@ BAD briefingItems (NEVER do this — outline labels with empty details and sever
 Respond ONLY with valid JSON, no markdown:
 {
   "isBriefing": false,
-  "analysis": "one sentence: name any hypothetical disruption the user described and who/what it affects, then what you found",
+  "analysis": "one sentence describing the current allocation picture — where revenue is at risk, which phases are uncovered, the key constraint. If the user described a disruption (storm, sick call, site delay), weave it in by name. NEVER lead with 'no hypothetical disruption specified' or similar — the manager is asking about everyday allocation; disruptions are an optional input, not the default frame.",
   "recommendation": "specific action: engineer name, current location, destination project, phase, cert, travel band",
   "briefingItems": [],
   "proposedChange": { "projectId":"P##", "phase":"delivery|installation|networking", "newEngineerId":"DEL## | INS## | NET##", "fromProjectId":"P## or null", "fromPhase":"phase or null" },
