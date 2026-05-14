@@ -1537,7 +1537,7 @@ export default function Sortie() {
     try {
       const res = await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          model:"claude-haiku-4-5-20251001", max_tokens:1200,
+          model:"claude-haiku-4-5-20251001", max_tokens:2400,
           system:`You are Sortie, an AI workforce deployment assistant for a company that delivers and installs enterprise server infrastructure at colocation facilities across the USA. Engineers work in three sequential phases per project: Delivery (physical moving of equipment), Installation (vendor-specific racking/configuration), and Networking (network commissioning). Revenue is only recognized on full project completion (after Networking phase).
 
 CURRENT STATE:
@@ -1563,6 +1563,8 @@ THREE MODES:
 MODE 1 — EXPLICIT OVERRIDE: Manager names BOTH a specific engineer AND a specific destination project. Execute it. Validate cert for the active phase. Set isBriefing:false. CRITICAL: MODE 1 requires a NAMED engineer in the query — a first name ("Ravi"), last name ("Patel"), full name ("Ravi Patel"), or engineer ID ("NET07"). Generic words like "somebody", "anyone", "an engineer", "the best person" are NOT named engineers. If the query uses a command verb (reallocate, move, assign, send) but does NOT name a specific engineer, treat it as MODE 2 — the manager is asking YOU to pick, not commanding a known person.
 
 MODE 2 — AI OPTIMIZATION: Manager asks YOU to recover, reassign, reallocate, rebalance, optimize, fix, cover, replan, or minimize/reduce risk or exposure. These are ACTION requests — return a populated proposedChange and set isBriefing:false. Even broad asks like "reallocate teams to minimize revenue at risk" or "optimize coverage" are MODE 2: pick the single highest-impact swap and propose it. Match cert to active phase. Prefer available/freed engineers (and engineers freed by hypothetical site delays); recommend the highest-revenue at-risk project they can cover. EXCLUDE any engineers the hypothetical marks as unavailable. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue). CRITICAL: For MODE 2, proposedChange MUST be populated whenever any cert-qualified engineer in the roster (deployed OR available, minus those the hypothetical disrupted) exists. Only return proposedChange:null if literally zero qualified engineers remain. Set isBriefing:false.
+
+TERSE OUTPUT — MODE 2 (STRICT): The "recommendation" field MUST be ONE sentence stating the FINAL chosen action only. Format: "Reassign [Engineer Name] ([ID]) from [Source Project] to [Target Project] — [cert] match, [travel band], recovers [$X]." Do NOT enumerate engineers you considered and rejected. Do NOT narrate your cert-checking process. Do NOT use phrases like "Instead:", "ALTERNATIVE:", "This does NOT match", "No match" — work that out internally and only output the chosen result. The "analysis" field is also ONE sentence — the picture, not your reasoning. The full schema must fit comfortably in the response budget; verbose reasoning will be truncated.
 
 MODE 3 — BRIEFING: Diagnostic-only questions: "what's my exposure", "what's the status", "who's at risk", "who's available", "give me a briefing", or a hypothetical with no action verb ("what happens if Megan is out?"). MODE 3 is for understanding the picture, NOT for taking action. If the query contains an action verb (reallocate, optimize, rebalance, minimize, reduce, fix, cover, replan, recover, reassign), route to MODE 2 even if it also mentions "risk" or "exposure" — the manager wants a proposed move, not a diagnosis. Set isBriefing:true, proposedChange:null. Each briefingItem is a CONCRETE FINDING — NOT a category label. The "title" IS the finding in 3-8 words. The "detail" is one full sentence with specifics — project IDs (P##), dollar amounts, engineer names, city names — pulled from CURRENT STATE and from the hypothetical the user described. Severity goes in the severity field, never in the title text. Aim for 3-6 items ordered by revenue impact.
 
@@ -1600,15 +1602,30 @@ Respond ONLY with valid JSON, no markdown:
       // ```json fences and (2) appends prose after the closing brace, both of
       // which the simpler regex-strip-then-parse couldn't survive. Strategy:
       // strip fences, then slice from the first { to the last } so trailing
-      // prose can't break parsing. Falls back to a raw-text shape if that
-      // sliced span still isn't valid JSON (truncation, malformed structure).
+      // prose can't break parsing. Falls back to a friendly error message if
+      // the sliced span still isn't valid JSON (truncation at max_tokens, badly
+      // malformed structure, etc.). The fallback NEVER dumps raw text into
+      // analysis/recommendation fields — that produces a JSON-as-text user
+      // experience that's worse than a clean error.
       let parsed;
       const stripped = raw.replace(/```json|```/g,"").trim();
       const first = stripped.indexOf("{");
       const last  = stripped.lastIndexOf("}");
       const candidate = (first!==-1 && last!==-1 && last>first) ? stripped.slice(first, last+1) : stripped;
       try { parsed = JSON.parse(candidate); }
-      catch { parsed = {analysis:raw,recommendation:raw,proposedChange:null,isBriefing:false,certMatch:true}; }
+      catch {
+        // Heuristic: if raw doesn't end with a closing brace, it was truncated.
+        const looksTruncated = !raw.trim().endsWith("}");
+        parsed = {
+          analysis: looksTruncated
+            ? "The response was cut off before it could finish. Try a more focused request — for example, name a single project ('cover P23') or a single engineer ('move Megan to Delta Air Lines')."
+            : "I couldn't parse the response. Please try rephrasing your request.",
+          recommendation: "",
+          proposedChange: null,
+          isBriefing: false,
+          certMatch: true
+        };
+      }
 
       const {parsed:validated} = validateAIResponse(parsed, phaseComplete);
       setPreview({data:validated,originalCmd:cmd});
