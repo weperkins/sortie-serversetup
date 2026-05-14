@@ -1596,8 +1596,18 @@ Respond ONLY with valid JSON, no markdown:
       if (res.status===400) { setPreview({error:data.error||"Invalid request.",data:null}); setLoading(false); return; }
 
       const raw = data.content?.[0]?.text||"{}";
+      // Robust JSON extraction. Haiku occasionally (1) wraps the response in
+      // ```json fences and (2) appends prose after the closing brace, both of
+      // which the simpler regex-strip-then-parse couldn't survive. Strategy:
+      // strip fences, then slice from the first { to the last } so trailing
+      // prose can't break parsing. Falls back to a raw-text shape if that
+      // sliced span still isn't valid JSON (truncation, malformed structure).
       let parsed;
-      try { parsed = JSON.parse(raw.replace(/```json|```/g,"").trim()); }
+      const stripped = raw.replace(/```json|```/g,"").trim();
+      const first = stripped.indexOf("{");
+      const last  = stripped.lastIndexOf("}");
+      const candidate = (first!==-1 && last!==-1 && last>first) ? stripped.slice(first, last+1) : stripped;
+      try { parsed = JSON.parse(candidate); }
       catch { parsed = {analysis:raw,recommendation:raw,proposedChange:null,isBriefing:false,certMatch:true}; }
 
       const {parsed:validated} = validateAIResponse(parsed, phaseComplete);
