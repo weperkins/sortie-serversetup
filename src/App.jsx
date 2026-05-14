@@ -229,37 +229,20 @@ const BASE_PHASE_COMPLETE = {
   P25:["delivery","installation"],
 };
 
-// ── SCENARIOS ─────────────────────────────────────────────────────────────
-const SCENARIOS = [
-  {id:0,label:"NOMINAL",name:"Normal Operations",color:C.green,
-   desc:"Installation fully covered. Delivery has P22 open (no bench engineer). Networking is the constraint — 9 engineers active, 6 projects queued AT RISK.",
-   disruptions:{},freedEngineers:{},earlyProjects:{},
-  },
-  {id:1,label:"SICK CALL",name:"Engineer Sick Call",color:C.amber,
-   desc:"Megan O'Brien (Networking) out sick. Intel Lab Servers ($420K) Networking phase loses coverage — AT RISK.",
-   disruptions:{NET02:"Sick"},freedEngineers:{},earlyProjects:{},
-  },
-  {id:2,label:"READINESS",name:"Site Readiness Delay",color:C.teal,
-   desc:"Kaiser Permanente site not ready — HVAC overrun. Antoine Leblanc freed from P24 Installation. P24 now understaffed: 1 of 2 engineers.",
-   disruptions:{},freedEngineers:{INS06:"Site Delay"},earlyProjects:{},
-  },
-  {id:3,label:"WEATHER",name:"Snowstorm Delay",color:C.amber,
-   desc:"Winter storm grounds 3 engineers. BofA AI Delivery understaffed (1/2). Capital One & United Airlines Networking AT RISK. $1.46M exposed.",
-   disruptions:{DEL07:"Weather",NET01:"Weather",NET07:"Weather"},freedEngineers:{},earlyProjects:{},
-  },
-  {id:4,label:"EARLY READY",name:"Site Ready Early",color:C.green,
-   desc:"Capital One GPU Cluster ($780K) site prep complete 5 days early. P01 timeline tightens to 3 days — already covered by NET01, but urgency now drives prioritization.",
-   disruptions:{},freedEngineers:{},earlyProjects:{P01:3},
-  },
-  {id:5,label:"SUPPLY CHAIN",name:"Supply Chain Shock",color:C.red,
-   desc:"Hardware backordered 4–6 weeks. 3 engineers freed: P04 and P24 Installation understaffed, P17 Networking AT RISK.",
-   disruptions:{},freedEngineers:{INS02:"Parts Delay",INS07:"Parts Delay",NET08:"Parts Delay"},earlyProjects:{},
-  },
-  {id:6,label:"PEAK DEMAND",name:"Peak Demand Overload",color:C.red,
-   desc:"5 engineers on PTO during peak period. $4.24M across 10 at-risk projects. Bench is empty — AI must prioritize the highest-value recoveries.",
-   disruptions:{INS01:"PTO",INS07:"PTO",NET01:"PTO",NET02:"PTO",NET07:"PTO"},freedEngineers:{},earlyProjects:{},
-  },
-];
+// ── BASELINE ──────────────────────────────────────────────────────────────
+// Sortie reasons about hypothetical disruptions in natural language — the user
+// types "snowstorm closed ORD" or "Sara is out sick" and the AI applies the
+// premise without persisting any pre-canned scenario state. The baseline below
+// is the always-on world state: empty disruptions/freedEngineers maps. The
+// at-risk pressure already baked into BASE_PHASE_ASSIGN (P22 delivery + six
+// networking projects without assigned engineers) gives the demo plenty to
+// work with on first paint.
+const BASELINE_SCENARIO = {
+  name: "Live Operations",
+  disruptions: {},
+  freedEngineers: {},
+  earlyProjects: {},
+};
 
 // ── HELPERS ────────────────────────────────────────────────────────────────
 const fmtRev  = n => n>=1e6?`$${(n/1e6).toFixed(2)}M`:`$${(n/1000).toFixed(0)}K`;
@@ -378,8 +361,7 @@ const F  = "'Barlow Condensed',sans-serif";
 const FB = "'Barlow',sans-serif";
 const FM = "'JetBrains Mono',monospace";
 
-function Header({scenarioId,atRisk,util,deployed,demoOpen,setDemoOpen}) {
-  const sc = SCENARIOS.find(s=>s.id===scenarioId)||SCENARIOS[0];
+function Header({atRisk,util,deployed}) {
   return (
     <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:`0 ${S.s5}`,
       display:"flex",alignItems:"center",gap:S.s5,height:"clamp(48px, 4.5vw + 30px, 60px)",flexShrink:0}}>
@@ -389,13 +371,6 @@ function Header({scenarioId,atRisk,util,deployed,demoOpen,setDemoOpen}) {
         <line x1="13" y1="2" x2="13" y2="11" stroke={C.accent} strokeWidth="1.5"/>
       </svg>
       <span style={{fontFamily:F,fontSize:T.xl,fontWeight:800,color:C.white,letterSpacing:3,flexShrink:0}}>SORTIE</span>
-      {scenarioId!==0&&(
-        <div style={{display:"flex",alignItems:"center",gap:S.s2,background:`${sc.color}18`,
-          border:`1px solid ${sc.color}55`,borderRadius:4,padding:`${S.s1} ${S.s3}`,flexShrink:0}}>
-          <div style={{width:5,height:5,borderRadius:"50%",background:sc.color}}/>
-          <span style={{fontFamily:F,fontSize:T.xs,fontWeight:700,letterSpacing:1.5,color:sc.color}}>{sc.name.toUpperCase()}</span>
-        </div>
-      )}
       <div style={{flex:1,minWidth:0}}/>
       {[{l:"REVENUE AT RISK",v:fmtRev(atRisk),c:atRisk>0?C.red:C.green},
         {l:"UTILIZATION",v:`${util}%`,c:util>=90?C.green:util>=70?C.amber:C.red},
@@ -406,59 +381,6 @@ function Header({scenarioId,atRisk,util,deployed,demoOpen,setDemoOpen}) {
           <div style={{fontFamily:FM,fontSize:T.xxl,fontWeight:500,color:m.c,lineHeight:1.1}}>{m.v}</div>
         </div>
       ))}
-      <button onClick={()=>setDemoOpen(v=>!v)} title="Simulation controls"
-        style={{width:32,height:32,borderRadius:4,border:`1px solid ${demoOpen?C.borderBrt:C.border}`,
-          background:demoOpen?C.card:"transparent",cursor:"pointer",display:"flex",
-          alignItems:"center",justifyContent:"center",flexShrink:0}}>
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-          <circle cx="7.5" cy="7.5" r="2.5" stroke={demoOpen?C.accent:C.dim} strokeWidth="1.3"/>
-          <path d="M7.5 1v1.5M7.5 12.5V14M1 7.5h1.5M12.5 7.5H14M2.9 2.9l1.1 1.1M11 11l1.1 1.1M11 2.9l-1.1 1.1M3 11l-1.1 1.1"
-            stroke={demoOpen?C.accent:C.dim} strokeWidth="1.3" strokeLinecap="round"/>
-        </svg>
-      </button>
-    </div>
-  );
-}
-
-function DemoPanel({scenarioId,setScenarioId,onClose}) {
-  const HEAD_TOP = "clamp(49px, 4.5vw + 31px, 61px)";
-  return (
-    <div style={{position:"absolute",top:HEAD_TOP,right:0,width:"clamp(260px, 24vw, 340px)",
-      maxHeight:`calc(100vh - ${HEAD_TOP})`,
-      background:C.card,borderLeft:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,
-      zIndex:200,display:"flex",flexDirection:"column"}}>
-      <style>{`
-        .sortie-demopanel-scroll::-webkit-scrollbar { width: 10px; }
-        .sortie-demopanel-scroll::-webkit-scrollbar-track { background: ${C.surface}; }
-        .sortie-demopanel-scroll::-webkit-scrollbar-thumb { background: ${C.accent}66; border-radius: 5px; border: 2px solid ${C.surface}; }
-        .sortie-demopanel-scroll::-webkit-scrollbar-thumb:hover { background: ${C.accent}cc; }
-        .sortie-demopanel-scroll { scrollbar-width: thin; scrollbar-color: ${C.accent}66 ${C.surface}; }
-      `}</style>
-      <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,flexShrink:0,
-        display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <span style={{fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:2,color:C.dim}}>SIMULATION CONTROLS</span>
-        <button onClick={onClose} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:16}}>✕</button>
-      </div>
-      <div className="sortie-demopanel-scroll" style={{padding:10,display:"flex",flexDirection:"column",gap:5,overflowY:"auto",flex:1,minHeight:0}}>
-        {SCENARIOS.map(s=>(
-          <button key={s.id} onClick={()=>{setScenarioId(s.id);onClose();}}
-            style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 11px",flexShrink:0,
-              border:`1px solid ${scenarioId===s.id?s.color:C.border}`,borderRadius:5,
-              background:scenarioId===s.id?`${s.color}14`:C.surface,cursor:"pointer",textAlign:"left"}}>
-            <div style={{width:7,height:7,borderRadius:"50%",background:s.color,flexShrink:0,marginTop:3}}/>
-            <div>
-              <div style={{fontFamily:F,fontSize:11,fontWeight:700,letterSpacing:1,
-                color:scenarioId===s.id?s.color:C.white}}>{s.name}</div>
-              <div style={{fontFamily:FB,fontSize:10,color:C.dim,lineHeight:1.4,marginTop:2}}>{s.desc}</div>
-            </div>
-          </button>
-        ))}
-      </div>
-      <div style={{padding:"6px 14px",borderTop:`1px solid ${C.border}`,flexShrink:0}}>
-        <span style={{fontFamily:F,fontSize:8,color:C.dim,letterSpacing:1}}>
-          DEMO MODE · All project data is fictional
-        </span>
-      </div>
     </div>
   );
 }
@@ -1264,9 +1186,9 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
 }
 
 const QUICK_CMDS = [
-  {label:"What's my exposure?",icon:"📊"},
-  {label:"Cover highest risk now",icon:"🎯"},
-  {label:"Who's available?",icon:"👥"},
+  {label:"Snowstorm closed Chicago O'Hare — what's the impact?",icon:"❄️"},
+  {label:"Megan called in sick — who can cover?",icon:"🤒"},
+  {label:"What's my exposure right now?",icon:"📊"},
 ];
 
 function CommandBar({cmd,setCmd,runCmd,loading,inputRef,onOpenRoster,mobile}) {
@@ -1294,7 +1216,7 @@ function CommandBar({cmd,setCmd,runCmd,loading,inputRef,onOpenRoster,mobile}) {
         <div style={{width:1,height:30,background:C.border,flexShrink:0}}/>
         <input ref={inputRef} value={cmd} onChange={e=>setCmd(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();runCmd();}}}
-          placeholder="e.g. Who can cover United Airlines networking? · Move Ravi to Capital One · What's my exposure?"
+          placeholder="Describe a disruption or ask a question — e.g. 'Snowstorm closed ORD, replan' · 'Kaiser site delayed, who can I redeploy?' · 'What's my exposure?'"
           style={{flex:1,minWidth:0,background:C.card,border:`1px solid ${C.borderBrt}`,borderRadius:5,
             padding:`${S.s3} ${S.s4}`,fontSize:T.base,outline:"none",lineHeight:1.4,color:C.white,fontFamily:FB}}/>
         <button onClick={runCmd} disabled={loading||!cmd.trim()}
@@ -1309,173 +1231,8 @@ function CommandBar({cmd,setCmd,runCmd,loading,inputRef,onOpenRoster,mobile}) {
   );
 }
 
-// ── MAIN APP ───────────────────────────────────────────────────────────────
-// ── SCENARIO BUILDER ──────────────────────────────────────────────────────
-function ScenarioBuilder({baseScenario, customDisruptions, customFreed, customEarly,
-  onAddDisruption, onAddFreed, onAddEarly, onClear, onClose}) {
-  const hasCustom = Object.keys(customDisruptions).length > 0 ||
-                    Object.keys(customFreed).length > 0 ||
-                    Object.keys(customEarly).length > 0;
-  const groups = Object.keys(MODALITY_MAP).map(mod=>({
-    mod, color:MODALITY_CLR[mod], engineers:ENGINEERS.filter(i=>i.modality===mod),
-  }));
-  const reasons = ["Sick","Weather","PTO","Equipment Delay"];
-  const [selectedReason, setSelectedReason] = useState("Sick");
-  const [earlyPid, setEarlyPid]             = useState("");
-  const [earlyDays, setEarlyDays]           = useState(3);
-
-  const getEngineerState = engineerId => {
-    if (customDisruptions[engineerId]) return {type:"disrupted",reason:customDisruptions[engineerId],source:"custom"};
-    if (customFreed[engineerId])       return {type:"freed",    reason:customFreed[engineerId],    source:"custom"};
-    if (baseScenario.disruptions?.[engineerId]) return {type:"disrupted",reason:baseScenario.disruptions[engineerId],source:"base"};
-    if (baseScenario.freedEngineers?.[engineerId]) return {type:"freed",reason:baseScenario.freedEngineers[engineerId],source:"base"};
-    return null;
-  };
-
-  return (
-    <div style={{position:"absolute",top:0,right:0,bottom:0,width:340,background:C.card,
-      borderLeft:`1px solid ${C.borderBrt}`,zIndex:150,display:"flex",flexDirection:"column",
-      boxShadow:"-4px 0 20px rgba(0,0,0,0.5)"}}>
-      {/* Header */}
-      <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,
-        display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
-        <div>
-          <div style={{fontFamily:F,fontSize:12,fontWeight:700,letterSpacing:2,color:C.accent}}>SCENARIO BUILDER</div>
-          <div style={{fontFamily:FB,fontSize:10,color:C.dim,marginTop:1}}>
-            Builds on: <span style={{color:C.white}}>{baseScenario.name}</span>
-          </div>
-        </div>
-        <button onClick={onClose}
-          style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:18,lineHeight:1}}>✕</button>
-      </div>
-
-      <div style={{flex:1,overflowY:"auto",padding:12,display:"flex",flexDirection:"column",gap:10}}>
-        {/* Reason selector */}
-        <div style={{background:C.surface,borderRadius:6,padding:"10px 12px"}}>
-          <div style={{fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:7}}>DISRUPTION REASON</div>
-          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-            {reasons.map(r=>(
-              <button key={r} onClick={()=>setSelectedReason(r)}
-                style={{fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:1,padding:"2px 8px",
-                  borderRadius:3,border:`1px solid ${selectedReason===r?C.red:C.border}`,
-                  background:selectedReason===r?`${C.red}22`:"transparent",
-                  color:selectedReason===r?C.red:C.dim,cursor:"pointer"}}>{r}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Engineers */}
-        <div style={{background:C.surface,borderRadius:6,padding:"10px 12px"}}>
-          <div style={{fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:8}}>MARK ENGINEERS</div>
-          {groups.map(({mod,color,engineers:gi})=>(
-            <div key={mod} style={{marginBottom:8}}>
-              <div style={{fontFamily:F,fontSize:8,fontWeight:700,letterSpacing:2,color,marginBottom:4}}>{mod.toUpperCase()}</div>
-              {gi.map(engineer=>{
-                const state = getEngineerState(engineer.id);
-                const isBase = state?.source==="base";
-                const isCustom = state?.source==="custom";
-                return (
-                  <div key={engineer.id} style={{display:"flex",alignItems:"center",gap:6,
-                    padding:"3px 0",borderBottom:`1px solid ${C.border}`,opacity:isBase?0.5:1}}>
-                    <div style={{flex:1}}>
-                      <span style={{fontFamily:FB,fontSize:10,color:isBase||isCustom?C.dim:C.white}}>
-                        {engineer.name.split(" ")[0]}
-                      </span>
-                      {state&&(
-                        <span style={{fontFamily:F,fontSize:8,fontWeight:700,marginLeft:5,
-                          color:state.type==="freed"?C.teal:C.red,
-                          background:state.type==="freed"?`${C.teal}20`:`${C.red}20`,
-                          padding:"0 3px",borderRadius:2}}>
-                          {state.reason}{isBase?" (base)":""}
-                        </span>
-                      )}
-                    </div>
-                    {!isBase&&(
-                      isCustom?(
-                        <button onClick={()=>{
-                          if(customDisruptions[engineer.id]) onAddDisruption(engineer.id, null);
-                          else onAddFreed(engineer.id, null);
-                        }} style={{fontFamily:F,fontSize:8,fontWeight:700,padding:"1px 6px",
-                          border:`1px solid ${C.border}`,borderRadius:3,
-                          background:"transparent",color:C.dim,cursor:"pointer"}}>CLEAR</button>
-                      ):(
-                        <div style={{display:"flex",gap:3}}>
-                          <button onClick={()=>onAddDisruption(engineer.id, selectedReason)}
-                            style={{fontFamily:F,fontSize:8,fontWeight:700,padding:"1px 6px",
-                              border:`1px solid ${C.red}55`,borderRadius:3,
-                              background:`${C.red}12`,color:C.red,cursor:"pointer"}}>OUT</button>
-                          <button onClick={()=>onAddFreed(engineer.id, "Site Delay")}
-                            style={{fontFamily:F,fontSize:8,fontWeight:700,padding:"1px 6px",
-                              border:`1px solid ${C.teal}55`,borderRadius:3,
-                              background:`${C.teal}12`,color:C.teal,cursor:"pointer"}}>FREE</button>
-                        </div>
-                      )
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-
-        {/* Early ready project */}
-        <div style={{background:C.surface,borderRadius:6,padding:"10px 12px"}}>
-          <div style={{fontFamily:F,fontSize:9,fontWeight:700,letterSpacing:2,color:C.dim,marginBottom:8}}>MARK SITE READY EARLY</div>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <select value={earlyPid} onChange={e=>setEarlyPid(e.target.value)}
-              style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:4,
-                color:C.white,fontFamily:FB,fontSize:10,padding:"4px 6px"}}>
-              <option value="">Select project…</option>
-              {PROJECTS.map(p=>(
-                <option key={p.id} value={p.id}>{p.name.split(" ").slice(0,3).join(" ")}</option>
-              ))}
-            </select>
-            <input type="number" value={earlyDays} onChange={e=>setEarlyDays(+e.target.value)}
-              min={1} max={30}
-              style={{width:52,background:C.card,border:`1px solid ${C.border}`,borderRadius:4,
-                color:C.white,fontFamily:FM,fontSize:11,padding:"4px 6px",textAlign:"center"}}/>
-            <span style={{fontFamily:F,fontSize:9,color:C.dim}}>days</span>
-            <button onClick={()=>{if(earlyPid)onAddEarly(earlyPid,earlyDays);}}
-              style={{fontFamily:F,fontSize:9,fontWeight:700,padding:"4px 10px",
-                border:`1px solid ${C.green}55`,borderRadius:3,
-                background:`${C.green}12`,color:C.green,cursor:"pointer"}}>APPLY</button>
-          </div>
-          {Object.entries(customEarly).length>0&&(
-            <div style={{marginTop:7,display:"flex",flexDirection:"column",gap:3}}>
-              {Object.entries(customEarly).map(([pid,days])=>{
-                const p=PROJECTS.find(pr=>pr.id===pid);
-                return (
-                  <div key={pid} style={{display:"flex",alignItems:"center",gap:6,
-                    fontFamily:FB,fontSize:10,color:C.green}}>
-                    <span style={{flex:1}}>{p?.name.split(" ").slice(0,3).join(" ")} → {days}d</span>
-                    <button onClick={()=>onAddEarly(pid,null)}
-                      style={{fontFamily:F,fontSize:8,padding:"1px 5px",border:`1px solid ${C.border}`,
-                        borderRadius:3,background:"transparent",color:C.dim,cursor:"pointer"}}>✕</button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{padding:"10px 12px",borderTop:`1px solid ${C.border}`,flexShrink:0,display:"flex",gap:6}}>
-        <button onClick={onClear} disabled={!hasCustom}
-          style={{flex:1,fontFamily:F,fontWeight:700,fontSize:10,letterSpacing:1.5,padding:"6px 0",
-            border:`1px solid ${C.border}`,borderRadius:4,
-            background:"transparent",color:hasCustom?C.amber:C.dim,cursor:hasCustom?"pointer":"not-allowed",
-            opacity:hasCustom?1:0.5}}>CLEAR ALL CUSTOM</button>
-        <button onClick={onClose}
-          style={{flex:1,fontFamily:F,fontWeight:700,fontSize:10,letterSpacing:1.5,padding:"6px 0",
-            border:"none",borderRadius:4,background:C.accent,color:C.white,cursor:"pointer"}}>DONE</button>
-      </div>
-    </div>
-  );
-}
-
 // ── EXPORT MODAL ───────────────────────────────────────────────────────────
-function ExportModal({scenarioName, customActive, totalAtRisk, util, deployed,
+function ExportModal({totalAtRisk, util, deployed,
   auditLog, projects, phaseAssign, phaseComplete, onClose}) {
   const [copied, setCopied] = useState(false);
 
@@ -1496,7 +1253,6 @@ function ExportModal({scenarioName, customActive, totalAtRisk, util, deployed,
     `${"═".repeat(52)}`,
     `SORTIE — SESSION RECOVERY REPORT`,
     `Generated: ${now}`,
-    `Scenario: ${scenarioName}${customActive?" + Custom Overrides":""}`,
     `${"═".repeat(52)}`,
     ``,
     `REVENUE SNAPSHOT`,
@@ -1603,24 +1359,17 @@ export default function Sortie() {
   const [mobileRosterOpen, setMobileRosterOpen]  = useState(false);
   // Auto-collapse roster on first paint at narrow widths (it can still be expanded).
   useEffect(()=>{ if(narrow && !mobile) setRosterCollapsed(true); },[narrow,mobile]);
-  const [scenarioId,       setScenarioId]       = useState(0);
   const [phaseAssign,      setPhaseAssign]       = useState(()=>JSON.parse(JSON.stringify(BASE_PHASE_ASSIGN)));
   const [phaseComplete,    setPhaseComplete]     = useState(()=>JSON.parse(JSON.stringify(BASE_PHASE_COMPLETE)));
   const [cmd,              setCmd]               = useState("");
   const [loading,          setLoading]           = useState(false);
   const [preview,          setPreview]           = useState(null);
-  const [demoOpen,         setDemoOpen]          = useState(false);
   const [auditLog,         setAuditLog]          = useState([]);
   const [auditOpen,        setAuditOpen]         = useState(false);
   const [mainView,         setMainView]          = useState("board");
   const [heatmapFilter,    setHeatmapFilter]     = useState(null);
   const [commitResult,     setCommitResult]      = useState(null);
-  const [builderOpen,      setBuilderOpen]       = useState(false);
   const [exportOpen,       setExportOpen]        = useState(false);
-  const [customDisruptions,setCustomDisruptions] = useState({});
-  const [customFreed,      setCustomFreed]       = useState({});
-  const [customEarly,      setCustomEarly]       = useState({});
-  const [resetKey,         setResetKey]          = useState(0);
   // Undo system: stack of undoable actions (LIFO). visibleUndo is just the
   // currently-shown snackbar entry — set when an action is performed, cleared
   // when the toast auto-dismisses or the user closes it. The stack itself is
@@ -1629,44 +1378,17 @@ export default function Sortie() {
   const [visibleUndo,      setVisibleUndo]       = useState(null);
   const inputRef = useRef(null);
 
-  const baseScenario = SCENARIOS.find(s=>s.id===scenarioId)||SCENARIOS[0];
+  // Sortie no longer carries pre-canned simulation state. Hypothetical
+  // disruptions are described in natural language by the user; the AI accepts
+  // the premise within a single conversation turn. Other components still
+  // expect a scenario-shaped object (Roster/EngineerCard/RiskHeatmap reference
+  // .disruptions / .freedEngineers), so we pass the empty baseline.
+  const effectiveScenario = BASELINE_SCENARIO;
 
-  // Merge base scenario with custom overrides
-  const effectiveScenario = {
-    ...baseScenario,
-    disruptions:    {...(baseScenario.disruptions||{}),    ...customDisruptions},
-    freedEngineers: {...(baseScenario.freedEngineers||{}), ...customFreed},
-    earlyProjects:  {...(baseScenario.earlyProjects||{}),  ...customEarly},
-  };
-  const hasCustom = Object.keys(customDisruptions).length>0 ||
-                    Object.keys(customFreed).length>0 ||
-                    Object.keys(customEarly).length>0;
-
-  // Active projects (with earlyProjects override)
-  const activeProjects = PROJECTS.map(p=>{
-    const ov = effectiveScenario.earlyProjects?.[p.id];
-    return ov!==undefined?{...p,daysLeft:ov}:p;
-  });
-
-  // Reset phase state when scenario or custom disruptions change
-  useEffect(()=>{
-    const newPA = JSON.parse(JSON.stringify(BASE_PHASE_ASSIGN));
-    const newPC = JSON.parse(JSON.stringify(BASE_PHASE_COMPLETE));
-    const allOut = [...Object.keys(effectiveScenario.disruptions||{}),...Object.keys(effectiveScenario.freedEngineers||{})];
-    allOut.forEach(engineerId=>{
-      Object.keys(newPA).forEach(key=>{
-        newPA[key] = (newPA[key]||[]).filter(id=>id!==engineerId);
-      });
-    });
-    setPhaseAssign(newPA);
-    setPhaseComplete(newPC);
-    setPreview(null);
-    setCmd("");
-    setCommitResult(null);
-    setHeatmapFilter(null);
-    setUndoStack([]);
-    setVisibleUndo(null);
-  },[scenarioId, resetKey]);
+  // No scenario overrides anymore — activeProjects mirrors PROJECTS directly,
+  // but we keep the indirection so downstream code that mutates daysLeft (e.g.
+  // future "site ready early" affordances) has a single place to plug in.
+  const activeProjects = PROJECTS;
 
   const getStatus = id => engineerStatus(id, effectiveScenario, phaseAssign);
   const totalAtRisk    = calcRevAtRisk(activeProjects, phaseAssign, phaseComplete);
@@ -1683,7 +1405,7 @@ export default function Sortie() {
     const prevPhaseComplete = JSON.parse(JSON.stringify(phaseComplete));
     setPhaseComplete(prev=>({...prev,[projectId]:[...(prev[projectId]||[]),phase]}));
     setAuditLog(prev=>[...prev,{
-      time:fmtTime(), action:"PHASE COMPLETE", scenario:effectiveScenario.name,
+      time:fmtTime(), action:"PHASE COMPLETE",
       description:`${phase.toUpperCase()} phase marked complete on ${project.name}. ${freed.map(id=>getEngineer(id)?.name).join(", ")} freed for redeployment.`,
       revenueImpact:0, certValidation:null,
     }]);
@@ -1706,7 +1428,7 @@ export default function Sortie() {
         setPhaseComplete(top.restore.phaseComplete);
       }
       setAuditLog(log=>[...log,{
-        time:fmtTime(), action:"UNDONE", scenario:effectiveScenario.name,
+        time:fmtTime(), action:"UNDONE",
         description:`Reverted: ${top.description}`,
         revenueImpact:0, certValidation:null,
       }]);
@@ -1748,7 +1470,7 @@ export default function Sortie() {
       travel:{label:travelBand.label,color:travelBand.color,fromCity:curLoc.city,toCity},
     });
     setAuditLog(prev=>[...prev,{
-      time:fmtTime(), action:"COMMITTED", scenario:effectiveScenario.name,
+      time:fmtTime(), action:"COMMITTED",
       description:`${engineer.name} → ${project.name} (${phase} phase). ${fmtRev(beforeRisk-afterRisk)} recovered.`,
       revenueImpact:beforeRisk-afterRisk, certValidation:`${engineer.name}: ${reqCert} ✓`,
     }]);
@@ -1758,7 +1480,7 @@ export default function Sortie() {
   function dismissPreview() {
     if (preview?.data?.recommendation&&!preview.error) {
       setAuditLog(prev=>[...prev,{
-        time:fmtTime(),action:"DISMISSED",scenario:effectiveScenario.name,
+        time:fmtTime(),action:"DISMISSED",
         description:`Dismissed: "${preview.data.recommendation?.slice(0,80)}..."`,
         revenueImpact:0,certValidation:null,
       }]);
@@ -1770,26 +1492,30 @@ export default function Sortie() {
     if (!cmd.trim()||loading) return;
     setLoading(true);
     const ctx = {
-      scenario:effectiveScenario.name, description:effectiveScenario.desc,
       allProjects: activeProjects.map(p=>{
         const phase = getCurrentPhase(p.id, phaseComplete);
         const assigned = (phaseAssign[`${p.id}-${phase}`]||[]).map(id=>getEngineer(id)?.name).filter(Boolean);
         const status = getPhaseStatus(p.id, phase, p, phaseAssign, phaseComplete);
+        const siteCity = CUSTOMERS[p.customer].city;
         return {
           id:p.id, name:p.name, customer:CUSTOMERS[p.customer].name,
           tier:p.tier, revenue:p.revenue, daysLeft:p.daysLeft,
+          siteCity, siteRegion:TRAVEL_BANDS[siteCity]||"Unknown",
           currentPhase:phase, currentPhaseCert:p.phaseCerts[phase],
           currentPhaseRequired:p.phaseRequired[phase],
           currentPhaseAssigned:assigned, currentPhaseStatus:status,
           completedPhases:phaseComplete[p.id]||[],
         };
       }),
-      availableEngineers: ENGINEERS.filter(i=>getStatus(i.id)==="available"||getStatus(i.id)==="freed").map(i=>({
-        id:i.id, name:i.name, modality:i.modality, certs:i.certs,
-        homeCity:i.city, currentLocation:getCurrentLocation(i,phaseAssign).city,
-        locationSource:getCurrentLocation(i,phaseAssign).source,
-        status:getStatus(i.id),
-      })),
+      availableEngineers: ENGINEERS.filter(i=>getStatus(i.id)==="available"||getStatus(i.id)==="freed").map(i=>{
+        const loc = getCurrentLocation(i,phaseAssign);
+        return {
+          id:i.id, name:i.name, modality:i.modality, certs:i.certs,
+          homeCity:i.city, homeRegion:TRAVEL_BANDS[i.city]||"Unknown",
+          currentLocation:loc.city, currentRegion:TRAVEL_BANDS[loc.city]||"Unknown",
+          locationSource:loc.source, status:getStatus(i.id),
+        };
+      }),
       deployedEngineers: ENGINEERS.filter(i=>getStatus(i.id)==="deployed").map(i=>{
         const loc = getCurrentLocation(i,phaseAssign);
         let curProj=null,curPhase=null;
@@ -1799,18 +1525,13 @@ export default function Sortie() {
         const proj = PROJECTS.find(p=>p.id===curProj);
         return {
           id:i.id,name:i.name,modality:i.modality,certs:i.certs,
-          homeCity:i.city,currentLocation:loc.city,locationSource:loc.source,
+          homeCity:i.city,homeRegion:TRAVEL_BANDS[i.city]||"Unknown",
+          currentLocation:loc.city,currentRegion:TRAVEL_BANDS[loc.city]||"Unknown",
+          locationSource:loc.source,
           currentProjectId:curProj,currentProjectName:proj?.name,
           currentPhase:curPhase,currentPhaseCert:proj?.phaseCerts[curPhase],
         };
       }),
-      disruptedEngineers: Object.entries(effectiveScenario.disruptions||{}).map(([id,reason])=>({
-        id,name:getEngineer(id)?.name,modality:getEngineer(id)?.modality,reason,
-      })),
-      freedEngineers: Object.entries(effectiveScenario.freedEngineers||{}).map(([id,reason])=>({
-        id,name:getEngineer(id)?.name,modality:getEngineer(id)?.modality,reason,
-        note:"Available for redeployment — site stalled.",
-      })),
     };
 
     try {
@@ -1824,21 +1545,33 @@ ${JSON.stringify(ctx,null,2)}
 
 CERTIFICATION RULE: An engineer can ONLY be assigned to a phase if their "certs" array contains the project's cert for that phase (e.g. phaseCerts.installation). Never cross skill types (Delivery/Installation/Networking).
 
-LOCATION RULE: Use "currentLocation" not "homeCity" for travel feasibility. An engineer finishing in Dallas is closer to Houston than their home in Seattle.
+LOCATION RULE: Use "currentLocation" not "homeCity" for travel feasibility. An engineer finishing in Dallas is closer to Houston than their home in Seattle. Each engineer and each project site has a region (homeRegion / currentRegion / siteRegion): one of Northeast, Mid-Atlantic, Southeast, Midwest, South Central, Southwest, Mountain, West Coast, Pacific Northwest.
 
 PHASE BLOCKING RULE: Only the current active phase matters for revenue recovery. If a project is blocked in Networking, recommending a Delivery or Installation engineer does not recover revenue.
 
+HYPOTHETICAL DISRUPTION HANDLING (IMPORTANT): The user may describe a disruption in natural language — "snowstorm closed ORD", "Sara called in sick", "site delay at Capital One", "Chicago airport is closed", "Megan is on PTO this week", "BofA pushed their go-live by a week". Accept the premise WITHOUT asking for confirmation. Treat the affected engineers or projects as UNAVAILABLE for this turn's recommendation, even though they appear normal in CURRENT STATE.
+
+Identifying who is affected:
+- Named engineer ("Sara called in sick") → that engineer is unavailable. Match by first name, last name, full name, or engineer ID against CURRENT STATE.
+- Named city or airport ("ORD closed", "snowstorm in Chicago") → engineers whose currentLocation OR currentRegion is impacted are unavailable. ORD=Chicago=Midwest. JFK/LGA=New York=Northeast. ATL=Atlanta=Southeast. DFW=Dallas=South Central. LAX=Los Angeles=West Coast. SEA=Seattle=Pacific Northwest. DEN=Denver=Mountain. PHX=Phoenix=Southwest.
+- Named region ("storm in the midwest", "outage on the west coast") → all engineers in that region are unavailable.
+- Named project or customer with a delay ("Kaiser site is delayed") → engineers currently assigned to that project's active phase are FREED (they become available for redeployment elsewhere).
+
+Always include the hypothetical's impact in the analysis field — name the affected engineers/projects explicitly, then explain the recommendation.
+
 THREE MODES:
-MODE 1 — EXPLICIT OVERRIDE: Manager names specific engineer and project. Execute it. Validate cert for the active phase. Set isBriefing:false. CRITICAL: MODE 1 requires a NAMED engineer in the query — a first name ("Ravi"), last name ("Patel"), full name ("Ravi Patel"), or engineer ID ("NET07"). Generic words like "somebody", "anyone", "an engineer", "the best person" are NOT named engineers. If the query uses a command verb (reallocate, move, assign, send) but does NOT name a specific engineer, treat it as MODE 2 — the manager is asking YOU to pick, not commanding a known person.
-MODE 2 — AI OPTIMIZATION: Match cert to active phase. Prefer available/freed engineers; recommend the highest-revenue at-risk project they can cover. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. The reassignment is immediate; do NOT reason about waiting for the source project to finish first. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue); ignore travel distance as a tiebreaker unless two swaps yield equal revenue recovery. CRITICAL: For MODE 2, proposedChange MUST be populated (never null) whenever any engineer in deployedEngineers holds the required cert — even if all candidates are currently deployed. Only return proposedChange:null if literally zero engineers in the entire roster have the required cert. Set isBriefing:false.
-MODE 3 — BRIEFING: "exposure", "status", "what's at risk", "who's available", "briefing". Set isBriefing:true, proposedChange:null. Each briefingItem is a CONCRETE FINDING about the current state — NOT a category label or section header. The "title" IS the finding in 3-8 words. The "detail" is one full sentence with specifics — project IDs (P##), dollar amounts, engineer names, or city names pulled from CURRENT STATE. Severity goes in the severity field, never in the title text. Aim for 3-6 items ordered by revenue impact.
+MODE 1 — EXPLICIT OVERRIDE: Manager names BOTH a specific engineer AND a specific destination project. Execute it. Validate cert for the active phase. Set isBriefing:false. CRITICAL: MODE 1 requires a NAMED engineer in the query — a first name ("Ravi"), last name ("Patel"), full name ("Ravi Patel"), or engineer ID ("NET07"). Generic words like "somebody", "anyone", "an engineer", "the best person" are NOT named engineers. If the query uses a command verb (reallocate, move, assign, send) but does NOT name a specific engineer, treat it as MODE 2 — the manager is asking YOU to pick, not commanding a known person.
+
+MODE 2 — AI OPTIMIZATION: Manager asks YOU to recover, reassign, fix, cover, or replan. Match cert to active phase. Prefer available/freed engineers (and engineers freed by hypothetical site delays); recommend the highest-revenue at-risk project they can cover. EXCLUDE any engineers the hypothetical marks as unavailable. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue). CRITICAL: For MODE 2, proposedChange MUST be populated whenever any cert-qualified engineer in the roster (deployed OR available, minus those the hypothetical disrupted) exists. Only return proposedChange:null if literally zero qualified engineers remain. Set isBriefing:false.
+
+MODE 3 — BRIEFING: "exposure", "status", "what's at risk", "who's available", "briefing", or a hypothetical with no action verb ("what happens if Megan is out?"). Set isBriefing:true, proposedChange:null. Each briefingItem is a CONCRETE FINDING — NOT a category label. The "title" IS the finding in 3-8 words. The "detail" is one full sentence with specifics — project IDs (P##), dollar amounts, engineer names, city names — pulled from CURRENT STATE and from the hypothetical the user described. Severity goes in the severity field, never in the title text. Aim for 3-6 items ordered by revenue impact.
 
 GOOD briefingItems (do this — title is the finding, detail has specifics, severity is set):
 { "severity":"critical", "title":"6 networking projects blocked", "detail":"P16, P18, P19, P20, P23, P25 are stalled in networking phase totaling $2.36M in queued revenue." }
-{ "severity":"warning", "title":"Megan O'Brien (NET02) out sick", "detail":"Intel Lab P11 ($420K, 5 days left) loses its only assigned networking engineer with no qualified bench replacement." }
-{ "severity":"info", "title":"3 engineers freed for redeployment", "detail":"INS02 (Dallas), INS07 (San Francisco), and NET08 (Las Vegas) became bench-available due to parts backorder." }
+{ "severity":"warning", "title":"Snowstorm grounds 3 Midwest engineers", "detail":"DEL07 (Chicago), INS04 (Chicago), and NET07 (Chicago) are unavailable, exposing P15 BofA AI Cluster ($760K) and P02 AT&T Dallas ($650K)." }
+{ "severity":"info", "title":"Antoine Leblanc freed by Kaiser delay", "detail":"INS06 was on P24 Kaiser Permanente Cluster installation — site delay frees him for redeployment to any GPU installation project." }
 
-BAD briefingItems (NEVER do this — these are outline labels with empty details and severity baked into the title):
+BAD briefingItems (NEVER do this — outline labels with empty details and severity baked into the title):
 { "severity":"info", "title":"NETWORKING BOTTLENECK — CRITICAL", "detail":"" }
 { "severity":"info", "title":"STRATEGIC OPTIONS", "detail":"" }
 { "severity":"info", "title":"ENGINEER AVAILABILITY & LOCATION", "detail":"" }
@@ -1846,7 +1579,7 @@ BAD briefingItems (NEVER do this — these are outline labels with empty details
 Respond ONLY with valid JSON, no markdown:
 {
   "isBriefing": false,
-  "analysis": "one sentence: what was asked and what you found",
+  "analysis": "one sentence: name any hypothetical disruption the user described and who/what it affects, then what you found",
   "recommendation": "specific action: engineer name, current location, destination project, phase, cert, travel band",
   "briefingItems": [],
   "proposedChange": { "projectId":"P##", "phase":"delivery|installation|networking", "newEngineerId":"DEL## | INS## | NET##", "fromProjectId":"P## or null", "fromPhase":"phase or null" },
@@ -1879,8 +1612,7 @@ Respond ONLY with valid JSON, no markdown:
     <div style={{fontFamily:FB,background:C.bg,color:C.text,height:"100vh",
       display:"flex",flexDirection:"column",overflow:"hidden",position:"relative",
       maxWidth:1800,margin:"0 auto",borderLeft:`1px solid ${C.border}`,borderRight:`1px solid ${C.border}`}}>
-      <Header scenarioId={scenarioId} atRisk={totalAtRisk} util={util}
-        deployed={deployedCount} demoOpen={demoOpen} setDemoOpen={setDemoOpen}/>
+      <Header atRisk={totalAtRisk} util={util} deployed={deployedCount}/>
 
       {/* View toggle */}
       <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,
@@ -1894,14 +1626,6 @@ Respond ONLY with valid JSON, no markdown:
             {v.l}
           </button>
         ))}
-        {/* Scenario builder button */}
-        <button onClick={()=>setBuilderOpen(v=>!v)}
-          style={{fontFamily:F,fontSize:T.sm,fontWeight:700,letterSpacing:1.5,padding:`${S.s2} ${S.s4}`,
-            borderRadius:4,border:`1px solid ${builderOpen||hasCustom?C.accent:C.border}`,
-            background:builderOpen||hasCustom?`${C.accent}22`:"transparent",
-            color:builderOpen||hasCustom?C.accent:C.dim,cursor:"pointer"}}>
-          ⊕ BUILD SCENARIO {hasCustom?"(custom active)":""}
-        </button>
         <div style={{flex:1}}/>
         {/* Export button */}
         <button onClick={()=>setExportOpen(true)}
@@ -1919,8 +1643,6 @@ Respond ONLY with valid JSON, no markdown:
         </button>
       </div>
 
-      {demoOpen&&<DemoPanel scenarioId={scenarioId} setScenarioId={id=>{setScenarioId(id);setCustomDisruptions({});setCustomFreed({});setCustomEarly({});setDemoOpen(false);}} onClose={()=>setDemoOpen(false)}/>}
-
       <div style={{display:"flex",flex:1,overflow:"hidden",position:"relative"}}>
         <Roster engineers={ENGINEERS} scenario={effectiveScenario} phaseAssign={phaseAssign} phaseComplete={phaseComplete}
           collapsed={rosterCollapsed} onToggleCollapse={()=>setRosterCollapsed(v=>!v)}
@@ -1934,42 +1656,6 @@ Respond ONLY with valid JSON, no markdown:
             phaseComplete={phaseComplete} onMarkComplete={markPhaseComplete}
             heatmapFilter={heatmapFilter} onClearFilter={()=>setHeatmapFilter(null)} narrow={narrow}/>
         )}
-        {/* Scenario builder panel (slide in from right) */}
-        {builderOpen&&(
-          <ScenarioBuilder
-            baseScenario={baseScenario}
-            customDisruptions={customDisruptions}
-            customFreed={customFreed}
-            customEarly={customEarly}
-            onAddDisruption={(id,reason)=>{
-              if(reason===null){
-                setCustomDisruptions(prev=>{const n={...prev};delete n[id];return n;});
-              } else {
-                setCustomDisruptions(prev=>({...prev,[id]:reason}));
-              }
-              setResetKey(k=>k+1);
-            }}
-            onAddFreed={(id,reason)=>{
-              if(reason===null){
-                setCustomFreed(prev=>{const n={...prev};delete n[id];return n;});
-              } else {
-                setCustomFreed(prev=>({...prev,[id]:reason}));
-              }
-              setResetKey(k=>k+1);
-            }}
-            onAddEarly={(pid,days)=>{
-              if(days===null){
-                setCustomEarly(prev=>{const n={...prev};delete n[pid];return n;});
-              } else {
-                setCustomEarly(prev=>({...prev,[pid]:days}));
-              }
-            }}
-            onClear={()=>{
-              setCustomDisruptions({});setCustomFreed({});setCustomEarly({});
-              setResetKey(k=>k+1);
-            }}
-            onClose={()=>setBuilderOpen(false)}/>
-        )}
       </div>
 
       <CommandBar cmd={cmd} setCmd={setCmd} runCmd={runCmd} loading={loading} inputRef={inputRef}
@@ -1981,8 +1667,6 @@ Respond ONLY with valid JSON, no markdown:
       {auditOpen&&<AuditPanel log={auditLog} onClose={()=>setAuditOpen(false)}/>}
       <UndoSnackbar entry={visibleUndo} onUndo={undoLastAction} onDismiss={()=>setVisibleUndo(null)}/>
       {exportOpen&&<ExportModal
-        scenarioName={effectiveScenario.name}
-        customActive={hasCustom}
         totalAtRisk={totalAtRisk}
         util={util}
         deployed={deployedCount}
