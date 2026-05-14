@@ -335,6 +335,225 @@ function getTravelBand(fromCity, toCity) {
   return {label:"CROSS-COUNTRY · 2 DAYS",color:C.red};
 }
 
+// ── CLIENT-SIDE OPTIMIZER & PROSE SYNTHESIS ────────────────────────────────
+// Belt-and-suspenders for MODE 2. Three rounds of prompt-only fixes against
+// Haiku's chain-of-thought leakage and weak swap selection produced diminishing
+// returns, so per the handoff doctrine ("Every response path has a prompt
+// instruction AND a render guard") we add the render guard here:
+//   1. findOptimalSwap — picks the cert-matched (engineer, at-risk project)
+//      pair that maximizes net revenue gain. Beats Haiku's tendency to fixate
+//      on the single highest-revenue at-risk project and give up.
+//   2. synthesizeRecommendation — generates the recommendation sentence from
+//      the structured proposedChange so chain-of-thought attempts can never
+//      leak into rendered prose.
+//   3. commandImpliesDisruption — when the user describes a hypothetical
+//      (storm, sick call, site delay), Haiku has context the optimizer can't
+//      see (which engineers are excluded). We trust Haiku's swap in that case
+//      and only synthesize prose. Without a disruption, optimizer overrides
+//      weak or missing Haiku swaps.
+const DISRUPTION_KEYWORDS = ["storm","snowstorm","thunderstorm","blizzard","hurricane","tornado","snow","weather","sick","pto","vacation","delay","delayed","pushed","closed","outage","freeze","quit","emergency","stuck","grounded","flight","absent","unavailable","unable","leave","leaving","ooo"];
+const URGENCY_KEYWORDS = ["soonest","urgent","urgency","deadline","deadlines","fastest","quickest","immediate","critical-path","time-sensitive","earliest","priority"];
+const UTILIZATION_KEYWORDS = ["utilization","utilize","utilized","capacity","headcount","bench","idle"];
+
+function commandImpliesDisruption(cmd) {
+  const lower = (cmd||"").toLowerCase();
+  return DISRUPTION_KEYWORDS.some(kw => new RegExp(`\\b${kw}\\b`).test(lower));
+}
+
+function commandImpliesUrgency(cmd) {
+  const lower = (cmd||"").toLowerCase();
+  return URGENCY_KEYWORDS.some(kw => new RegExp(`\\b${kw}\\b`).test(lower));
+}
+
+function commandImpliesUtilization(cmd) {
+  const lower = (cmd||"").toLowerCase();
+  return UTILIZATION_KEYWORDS.some(kw => new RegExp(`\\b${kw}\\b`).test(lower));
+}
+
+// Returns array of project IDs that the cmd appears to target (by project ID,
+// customer name, or distinctive customer-name fragment). Empty array = no
+// project target detected. Two-phase: prefer exact phrase matches (project ID
+// or full customer name); only fall back to single-word fragment matches if
+// phase 1 found nothing. This prevents "Intermountain Health" from spuriously
+// matching Banner Health on the shared word "Health".
+function commandNamesProjects(cmd) {
+  const lower = (cmd||"").toLowerCase();
+  const matches = new Set();
+  // Phase 1: project IDs and full customer-name phrases
+  for (const p of PROJECTS) {
+    if (new RegExp(`\\b${p.id.toLowerCase()}\\b`).test(lower)) matches.add(p.id);
+    const cust = CUSTOMERS[p.customer];
+    if (cust && cust.name.length >= 4 && lower.includes(cust.name.toLowerCase())) {
+      matches.add(p.id);
+    }
+  }
+  if (matches.size > 0) return Array.from(matches);
+  // Phase 2: distinctive single-word fragments (only if phase 1 found nothing)
+  for (const p of PROJECTS) {
+    const cust = CUSTOMERS[p.customer];
+    if (!cust) continue;
+    const parts = cust.name.toLowerCase().split(/[\s&]+/).filter(s => s.length >= 5);
+    for (const part of parts) {
+      const escaped = part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`\\b${escaped}\\b`).test(lower)) {
+        matches.add(p.id);
+        break;
+      }
+    }
+  }
+  return Array.from(matches);
+}
+
+// Detect MODE 1: user named a specific engineer (first name, last name, or ID).
+// When true, we respect the user's explicit choice unless it's actively harmful
+// (net-negative). When false, we optimize aggressively because the user asked
+// US to pick. Names ≥ 4 chars avoid false positives on common short words.
+function commandNamesEngineer(cmd) {
+  const lower = (cmd||"").toLowerCase();
+  for (const eng of ENGINEERS) {
+    if (new RegExp(`\\b${eng.id.toLowerCase()}\\b`).test(lower)) return true;
+    const parts = eng.name.toLowerCase().split(/\s+/);
+    for (const part of parts) {
+      if (part.length < 4) continue;
+      const escaped = part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`\\b${escaped}\\b`).test(lower)) return true;
+    }
+  }
+  return false;
+}
+
+function findOptimalSwap(phaseAssign, phaseComplete, options) {
+  // options.priorityMode: 'revenue' (default) ranks at-risk projects by revenue
+  //   and returns the globally best (target.rev - source.rev) swap.
+  // options.priorityMode: 'urgency' ranks at-risk projects by daysLeft ascending
+  //   and returns the best feasible swap for the MOST URGENT project.
+  // options.projectFilter: array of project IDs — only consider these as targets.
+  const opts = options || {};
+  const priorityMode = opts.priorityMode || 'revenue';
+  const projectFilter = opts.projectFilter || null;
+  // At-risk projects: active phase has zero assigned engineers.
+  let atRisk = [];
+  for (const p of PROJECTS) {
+    if (projectFilter && !projectFilter.includes(p.id)) continue;
+    const phase = getCurrentPhase(p.id, phaseComplete);
+    const assigned = (phaseAssign[`${p.id}-${phase}`] || []).length;
+    if (assigned === 0) atRisk.push({ project: p, phase, requiredCert: p.phaseCerts[phase] });
+  }
+  if (atRisk.length === 0) return null;
+  // Map each engineer to their current ACTIVE-phase assignment (if any).
+  // Engineers in completed phases are "freed" — treated as bench (source = $0).
+  const currentAssignment = {};
+  for (const [key, ids] of Object.entries(phaseAssign)) {
+    if (!Array.isArray(ids)) continue;
+    const [pid, ph] = key.split("-");
+    if (getCurrentPhase(pid, phaseComplete) !== ph) continue;
+    for (const eid of ids) currentAssignment[eid] = { projectId: pid, phase: ph };
+  }
+  // Urgency mode: most-urgent at-risk project first; pick the highest-net-gain
+  // feasible swap for THAT project (not the global best). Stops at first project
+  // with any feasible swap so the demo shows: "we picked the most time-critical".
+  if (priorityMode === 'urgency') {
+    atRisk.sort((a, b) => a.project.daysLeft - b.project.daysLeft);
+    for (const arp of atRisk) {
+      let best = null;
+      for (const eng of ENGINEERS) {
+        if (!eng.certs.includes(arp.requiredCert)) continue;
+        const cur = currentAssignment[eng.id];
+        const sourceProject = cur ? PROJECTS.find(p => p.id === cur.projectId) : null;
+        const sourceRevenue = sourceProject ? sourceProject.revenue : 0;
+        const netGain = arp.project.revenue - sourceRevenue;
+        if (!best || netGain > best.netGain) {
+          best = {
+            projectId: arp.project.id, phase: arp.phase, newEngineerId: eng.id,
+            fromProjectId: cur?.projectId || null, fromPhase: cur?.phase || null,
+            netGain, priorityMode: 'urgency',
+          };
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+  // Revenue mode (default): score every cert-matched pair, pick max net gain.
+  let best = null;
+  for (const arp of atRisk) {
+    for (const eng of ENGINEERS) {
+      if (!eng.certs.includes(arp.requiredCert)) continue;
+      const cur = currentAssignment[eng.id];
+      const sourceProject = cur ? PROJECTS.find(p => p.id === cur.projectId) : null;
+      const sourceRevenue = sourceProject ? sourceProject.revenue : 0;
+      const netGain = arp.project.revenue - sourceRevenue;
+      if (!best || netGain > best.netGain) {
+        best = {
+          projectId: arp.project.id, phase: arp.phase, newEngineerId: eng.id,
+          fromProjectId: cur?.projectId || null, fromPhase: cur?.phase || null,
+          netGain, priorityMode: 'revenue',
+        };
+      }
+    }
+  }
+  return best;
+}
+
+function synthesizeRecommendation(change, phaseAssign, mode) {
+  const project = PROJECTS.find(p => p.id === change.projectId);
+  const engineer = ENGINEERS.find(e => e.id === change.newEngineerId);
+  if (!project || !engineer) return "";
+  const fromProj = change.fromProjectId ? PROJECTS.find(p => p.id === change.fromProjectId) : null;
+  const cert = project.phaseCerts[change.phase];
+  const loc = getCurrentLocation(engineer, phaseAssign);
+  const targetCity = CUSTOMERS[project.customer]?.city || "";
+  const travel = getTravelBand(loc.city, targetCity);
+  const sourceText = fromProj
+    ? `from ${fromProj.name} (${fmtRev(fromProj.revenue)} covered, ${fromProj.daysLeft} days remaining)`
+    : "from bench";
+  const netGain = project.revenue - (fromProj ? fromProj.revenue : 0);
+  // Urgency-mode prose frames the choice as deadline-driven, not revenue-driven.
+  if (mode === 'urgency') {
+    const closingText = netGain >= 0
+      ? `covers most urgent at-risk gap, net gain ${fmtRev(netGain)}`
+      : `covers most urgent at-risk gap, accepts ${fmtRev(-netGain)} marginal exposure`;
+    return `Reassign ${engineer.name} (${engineer.id}) ${sourceText} to ${project.name} (${fmtRev(project.revenue)} at-risk, only ${project.daysLeft} days to deadline) — ${cert} match, ${travel.label.toLowerCase()}, ${closingText}.`;
+  }
+  // Revenue-mode default
+  const gainText = netGain > 0
+    ? `net gain ${fmtRev(netGain)} recovered`
+    : netGain === 0
+      ? "revenue-neutral swap"
+      : `${fmtRev(-netGain)} more exposed than recovered`;
+  return `Reassign ${engineer.name} (${engineer.id}) ${sourceText} to ${project.name} (${fmtRev(project.revenue)} at-risk) — ${cert} match, ${travel.label.toLowerCase()}, ${gainText}.`;
+}
+
+// Synthesizes a clean analysis paragraph when the optimizer fires. This keeps
+// the analysis and recommendation narratives aligned — without this, Haiku's
+// analysis text can emphasize one thing (e.g. highest-revenue P23) while our
+// recommendation goes elsewhere (e.g. urgency-driven P18), creating a visible
+// inconsistency in the modal. Only fires when the optimizer overrode Haiku's
+// choice; Haiku's analysis stays for disruption/utilization paths.
+function synthesizeAnalysis(change, mode, phaseAssign, phaseComplete) {
+  const project = PROJECTS.find(p => p.id === change.projectId);
+  if (!project) return "";
+  const cert = project.phaseCerts[change.phase];
+  // Compute the at-risk picture
+  const atRiskProjects = [];
+  for (const p of PROJECTS) {
+    const phase = getCurrentPhase(p.id, phaseComplete);
+    const assigned = (phaseAssign[`${p.id}-${phase}`] || []).length;
+    if (assigned === 0) atRiskProjects.push(p);
+  }
+  const totalAtRisk = atRiskProjects.reduce((s, p) => s + p.revenue, 0);
+  const countWord = atRiskProjects.length === 1 ? 'project' : 'projects';
+  const countText = `${atRiskProjects.length} ${countWord} at-risk totaling ${fmtRev(totalAtRisk)}`;
+  if (mode === 'urgency') {
+    return `${countText}. ${project.name} has the tightest deadline at ${project.daysLeft} days remaining — the most urgent gap to close.`;
+  }
+  if (mode === 'constrained') {
+    return `${project.name} is at-risk in ${change.phase} phase, requiring ${cert} cert with ${project.daysLeft} days to deadline. The proposed swap covers the named target with minimal collateral exposure.`;
+  }
+  // Revenue mode (default)
+  return `${countText}. ${project.name} (${fmtRev(project.revenue)}, ${project.daysLeft} days remaining) is the highest-impact recoverable gap available.`;
+}
+
 // ── AI VALIDATION ──────────────────────────────────────────────────────────
 function validateAIResponse(parsed, phaseComplete) {
   if (!parsed?.proposedChange) return { ok:true, parsed };
@@ -1033,6 +1252,7 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
   const d         = preview.data;
   const change    = d?.proposedChange;
   const isBriefing= d?.isBriefing===true;
+  const isOverride = d?.isManagerOverride===true && !isBriefing;
   const toProj    = change?PROJECTS.find(p=>p.id===change.projectId):null;
   const toIse     = change?getEngineer(change.newEngineerId):null;
   const phase     = change?.phase;
@@ -1048,7 +1268,7 @@ function PreviewPanel({preview, onCommit, onCancel, phaseAssign, phaseComplete})
         padding:S.s5,display:"flex",flexDirection:"column",gap:S.s4}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{fontFamily:F,fontSize:T.md,fontWeight:700,letterSpacing:2,
-            color:isBriefing?C.teal:C.accent}}>{isBriefing?"SITUATION BRIEFING":"SORTIE RECOMMENDATION"}</div>
+            color:isBriefing?C.teal:isOverride?C.amber:C.accent}}>{isBriefing?"SITUATION BRIEFING":isOverride?"MANAGER OVERRIDE":"SORTIE RECOMMENDATION"}</div>
           <button onClick={onCancel} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:18}}>✕</button>
         </div>
         {preview.error?(
@@ -1564,7 +1784,15 @@ MODE 1 — EXPLICIT OVERRIDE: Manager names BOTH a specific engineer AND a speci
 
 MODE 2 — AI OPTIMIZATION: Manager asks YOU to recover, reassign, reallocate, rebalance, optimize, fix, cover, replan, or minimize/reduce risk or exposure. These are ACTION requests — return a populated proposedChange and set isBriefing:false. Even broad asks like "reallocate teams to minimize revenue at risk" or "optimize coverage" are MODE 2: pick the single highest-impact swap and propose it. Match cert to active phase. Prefer available/freed engineers (and engineers freed by hypothetical site delays); recommend the highest-revenue at-risk project they can cover. EXCLUDE any engineers the hypothetical marks as unavailable. If no bench engineer fits, reassign from a lower-revenue covered project to a higher-revenue at-risk one — set fromProjectId and fromPhase to the engineer's current assignment. Accept that the source project becomes at-risk — that IS the tradeoff. Pick the swap that maximizes (target.revenue - source.revenue). CRITICAL: For MODE 2, proposedChange MUST be populated whenever any cert-qualified engineer in the roster (deployed OR available, minus those the hypothetical disrupted) exists. Only return proposedChange:null if literally zero qualified engineers remain. Set isBriefing:false.
 
-TERSE OUTPUT — MODE 2 (STRICT): The "recommendation" field MUST be ONE sentence stating the FINAL chosen action only. Format: "Reassign [Engineer Name] ([ID]) from [Source Project] to [Target Project] — [cert] match, [travel band], recovers [$X]." Do NOT enumerate engineers you considered and rejected. Do NOT narrate your cert-checking process. Do NOT use phrases like "Instead:", "ALTERNATIVE:", "This does NOT match", "No match" — work that out internally and only output the chosen result. The "analysis" field is also ONE sentence — the picture, not your reasoning. The full schema must fit comfortably in the response budget; verbose reasoning will be truncated.
+TERSE OUTPUT — MODE 2 (STRICT): The "recommendation" field is ONE sentence stating the FINAL chosen action — the swap you are proposing, not the swaps you considered. The "analysis" field is ONE sentence describing the picture. FORBIDDEN phrases in "recommendation": "Instead:", "ALTERNATIVE:", "This does NOT match", "No match", "cert mismatch blocks", "No single swap covers", "blocks this move", "Reassign X... cert mismatch...". If you catch yourself writing any of these, STOP — you are narrating reasoning that belongs in your head, not in the output. Rewrite the sentence to state ONLY the final chosen swap.
+
+FALLBACK LADDER — MODE 2 (CRITICAL): Process at-risk projects in revenue order, highest first. For each, look for any cert-matched swap. The MOMENT you find a feasible swap on the ladder, STOP searching and propose that one. Only return proposedChange:null after exhausting ALL at-risk projects with no feasible swap anywhere on the ladder. The highest-revenue project being uncoverable does NOT mean you give up — it means you move to the next one. Recovering $440K from P19 is INFINITELY better than recovering $0 because P23 was too hard. The user asked to minimize REVENUE at risk, not to cover the single largest project.
+
+GOOD MODE 2 recommendation (the FINAL chosen action only, one sentence):
+"Reassign Megan O'Brien (NET02) from P11 Intel Lab Servers to P19 Delta Air Lines — NET-EDGE match, regional travel, recovers $440K at-risk revenue."
+
+BAD MODE 2 recommendation (NEVER do this — narrating attempts, giving up):
+"Reassign Jamal Washington (NET08) from P17 PNC Financial Servers to P23 ExxonMobil — cert mismatch blocks this move. Instead: reassign Patrick McGee (NET06) — cert mismatch blocks this move. No single swap covers high-risk P23."
 
 MODE 3 — BRIEFING: Diagnostic-only questions: "what's my exposure", "what's the status", "who's at risk", "who's available", "give me a briefing", or a hypothetical with no action verb ("what happens if Megan is out?"). MODE 3 is for understanding the picture, NOT for taking action. If the query contains an action verb (reallocate, optimize, rebalance, minimize, reduce, fix, cover, replan, recover, reassign), route to MODE 2 even if it also mentions "risk" or "exposure" — the manager wants a proposed move, not a diagnosis. Set isBriefing:true, proposedChange:null. Each briefingItem is a CONCRETE FINDING — NOT a category label. The "title" IS the finding in 3-8 words. The "detail" is one full sentence with specifics — project IDs (P##), dollar amounts, engineer names, city names — pulled from CURRENT STATE and from the hypothetical the user described. Severity goes in the severity field, never in the title text. Aim for 3-6 items ordered by revenue impact.
 
@@ -1628,7 +1856,108 @@ Respond ONLY with valid JSON, no markdown:
       }
 
       const {parsed:validated} = validateAIResponse(parsed, phaseComplete);
-      setPreview({data:validated,originalCmd:cmd});
+
+      // ── DEFENSE IN DEPTH: routing chain + optimizer + synthesized prose ──
+      // Routing decision chain (first match wins):
+      //  1) isBriefing → no override
+      //  2) disruption keyword → trust Haiku (only Haiku knows which engineers
+      //     the hypothetical excluded)
+      //  3) utilization query → trust Haiku (asks about deployment ratios,
+      //     not swap optimization)
+      //  4) named engineer → MODE 1; override only if Haiku's choice is
+      //     net-negative
+      //  5) named project(s) → constrained optimizer scoped to those projects
+      //  6) urgency keyword → urgency-mode optimizer (most-urgent at-risk
+      //     project first, best feasible swap for IT)
+      //  7) otherwise → revenue-mode optimizer (global best net-gain swap)
+      // After any routing decision, synthesize recommendation prose from the
+      // final proposedChange so chain-of-thought attempts can never leak.
+      let finalParsed = validated;
+      let recoMode = 'revenue';
+      let isManagerOverride = false;
+      if (finalParsed && finalParsed.isBriefing !== true) {
+        const haikuSwap = finalParsed.proposedChange;
+        let haikuNetGain = -Infinity;
+        if (haikuSwap?.projectId && haikuSwap?.newEngineerId) {
+          const tgt = PROJECTS.find(p => p.id === haikuSwap.projectId);
+          const src = haikuSwap.fromProjectId ? PROJECTS.find(p => p.id === haikuSwap.fromProjectId) : null;
+          if (tgt) haikuNetGain = tgt.revenue - (src?.revenue || 0);
+        }
+        const hasDisruption = commandImpliesDisruption(cmd);
+        const hasUtilization = commandImpliesUtilization(cmd);
+        const namedEngineer = commandNamesEngineer(cmd);
+        const namedProjects = commandNamesProjects(cmd);
+        const hasUrgency = commandImpliesUrgency(cmd);
+        isManagerOverride = namedEngineer && !hasDisruption;
+        // Step 2 + 3: trust Haiku entirely (no swap override).
+        if (!hasDisruption && !hasUtilization) {
+          let optimal = null;
+          let mode = 'revenue';
+          if (namedEngineer) {
+            // Step 4: MODE 1 — respect user's choice unless harmful.
+            const candidate = findOptimalSwap(phaseAssign, phaseComplete);
+            if (candidate && haikuNetGain === -Infinity) {
+              optimal = candidate;
+              mode = 'revenue';
+            } else if (candidate && haikuNetGain < 0 && candidate.netGain > haikuNetGain) {
+              optimal = candidate;
+              mode = 'revenue';
+            }
+          } else if (namedProjects.length > 0) {
+            // Step 5: constrained to named projects. Only override if Haiku's
+            // choice doesn't already target one of the named projects.
+            const haikuTargetsNamed = haikuSwap && namedProjects.includes(haikuSwap.projectId);
+            if (!haikuTargetsNamed) {
+              optimal = findOptimalSwap(phaseAssign, phaseComplete, { projectFilter: namedProjects });
+              mode = 'constrained';
+            }
+          } else if (hasUrgency) {
+            // Step 6: urgency-mode optimizer.
+            const candidate = findOptimalSwap(phaseAssign, phaseComplete, { priorityMode: 'urgency' });
+            if (candidate && (haikuNetGain === -Infinity || candidate.projectId !== haikuSwap?.projectId)) {
+              optimal = candidate;
+              mode = 'urgency';
+            }
+          } else {
+            // Step 7: revenue-mode optimizer (default).
+            const candidate = findOptimalSwap(phaseAssign, phaseComplete);
+            if (candidate && (haikuNetGain === -Infinity || candidate.netGain > haikuNetGain)) {
+              optimal = candidate;
+              mode = 'revenue';
+            }
+          }
+          if (optimal) {
+            const tgtProject = PROJECTS.find(p => p.id === optimal.projectId);
+            finalParsed = {
+              ...finalParsed,
+              proposedChange: {
+                projectId: optimal.projectId,
+                phase: optimal.phase,
+                newEngineerId: optimal.newEngineerId,
+                fromProjectId: optimal.fromProjectId,
+                fromPhase: optimal.fromPhase,
+              },
+              certMatch: true,
+              requiredCert: tgtProject?.phaseCerts[optimal.phase],
+              // Override Haiku's analysis with a deterministic version that
+              // matches what the recommendation will propose. Prevents the
+              // analysis paragraph emphasizing one thing while the
+              // recommendation goes elsewhere.
+              analysis: synthesizeAnalysis(optimal, mode, phaseAssign, phaseComplete),
+            };
+            recoMode = mode;
+          }
+        }
+        if (finalParsed.proposedChange) {
+          finalParsed = {
+            ...finalParsed,
+            recommendation: synthesizeRecommendation(finalParsed.proposedChange, phaseAssign, recoMode),
+            isManagerOverride,
+          };
+        }
+      }
+
+      setPreview({data:finalParsed,originalCmd:cmd});
     } catch(e) {
       setPreview({error:`Connection error: ${e.message}`,data:null});
     }
