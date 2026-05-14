@@ -3,6 +3,27 @@ const ipHits = new Map();
 const WINDOW_MS     = 60_000; // 1 minute
 const MAX_PER_WINDOW = 20;    // 20 requests per IP per minute
 
+// Daily aggregate cap — soft second-layer spend guard. Sized so that, even if a
+// single bad actor maxes it out every day at the per-request worst-case cost,
+// monthly spend stays below ~$300 at current Haiku 4.5 pricing. Env-var override
+// (DAILY_REQUEST_CAP in Vercel) lets us dial without redeploying.
+//
+// Caveats: counter is in-memory and resets on cold start, so this is approximate;
+// Vercel may spin multiple function instances under load, each with its own
+// counter. The HARD ceiling is the org-level spend cap in the Anthropic console.
+const DAILY_CAP = parseInt(process.env.DAILY_REQUEST_CAP || '1200', 10);
+const DAY_MS = 24 * 60 * 60 * 1000;
+let dailyState = { count: 0, windowStart: Date.now() };
+
+function checkDailyCap() {
+  const now = Date.now();
+  if (now - dailyState.windowStart > DAY_MS) {
+    dailyState = { count: 0, windowStart: now };
+  }
+  dailyState.count++;
+  return dailyState.count > DAILY_CAP;
+}
+
 // Vercel function config: extend the default 10s timeout. Hypothetical-reasoning
 // queries with the expanded system prompt (region/airport mapping, mode routing,
 // briefingItem examples) can push Haiku 4.5 past 10s on cold starts and complex
@@ -53,6 +74,12 @@ export default async function handler(req, res) {
   const allowedModels = ['claude-haiku-4-5-20251001', 'claude-haiku-4-5'];
   if (!allowedModels.includes(req.body?.model)) {
     return res.status(400).json({ error: 'Model not permitted.' });
+  }
+
+  // Daily aggregate cap — refuse before spending if we've hit the soft budget.
+  // Returns 429 so the frontend's existing rate-limit error path renders cleanly.
+  if (checkDailyCap()) {
+    return res.status(429).json({ error: 'Daily demo usage cap reached — please try again tomorrow.' });
   }
 
   try {
